@@ -1,0 +1,88 @@
+[{
+  "_id": {
+    "$oid": "672a44efec4386d81ab6e0fe"
+  },
+  "username": "murugans",
+  "email": "tirucsok26@gmail.com",
+  "firstName": "murugan castro ok",
+  "lastName": "Tamil ok",
+  "password": "$2b$10$bOxZOYvrt2oDbaPuezFt..rD9ga3f4GqYn6wLefeEfviY6yLtH7.2",
+  "role": "editor",
+  "language": "French",
+  "sendNotification": true,
+  "__v": 0,
+  "failedAttempts": 0
+},
+{
+  "_id": {
+    "$oid": "672a4873c831575824e3231b"
+  },
+  "username": "castro",
+  "email": "castromurugan@gmail.com",
+  "firstName": "Castro",
+  "lastName": "Murugan",
+  "password": "$2b$10$TO5YGlrDb/lKovIzntgZkO5ll/TUvjPySrjnojwgEg1wO0LngiL/C",
+  "role": "admin",
+  "language": "en",
+  "sendNotification": true,
+  "__v": 0,
+  "failedAttempts": 0
+},
+{
+  "_id": {
+    "$oid": "672b8a7e8ef8dbbc2432707b"
+  },
+  "username": "oscar",
+  "email": "oscar@gmail.com",
+  "password": "$2b$10$qJT2xo6z/ZsDBNbzjq/M/eg5uZHWVnoZxypErnFgXRYq1mKYb34ui",
+  "firstName": "oscar",
+  "lastName": "boy",
+  "role": "editor",
+  "language": "en",
+  "sendNotification": true,
+  "__v": 0,
+  "failedAttempts": 0
+},
+{
+  "_id": {
+    "$oid": "672caacfc218ce49b1583ec5"
+  },
+  "username": "tamil",
+  "email": "tamil@gmail.com",
+  "password": "$2b$10$8XCD4gz5dURCOa3V0cCFtOo2DEsruz2n/pbIbK0ks5OQcW.IoXfMi",
+  "firstName": "Dinasuvadu",
+  "lastName": "Tamil",
+  "role": "subscriber",
+  "language": "ta",
+  "sendNotification": true,
+  "__v": 0,
+  "failedAttempts": 0
+},
+{
+  "_id": {
+    "$oid": "67619a69d890c5dcd4835e1f"
+  },
+  "username": "murugantuty",
+  "email": "muriugan@gmail.com",
+  "password": "$2b$10$37etX7Y2E8R6xvOKQExDsu6mUo.FxjUw7cSwRlhZmBTjGGb4TDdsy",
+  "firstName": "murugan",
+  "lastName": "tuty",
+  "role": "admin",
+  "language": "en",
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "678e02b2c4251a9c123ff90b"
+  },
+  "username": "murugan god",
+  "email": "murugangod@gmail.com",
+  "password": "$2b$10$sr5UhzIfl9.Mv0jYJe3HhuMRbX/mhIiPqH4vn9KKmwH1fhjFIamwi",
+  "firstName": "murugan",
+  "lastName": "god tiruchendur",
+  "role": "admin",
+  "language": "en",
+  "sendNotification": true,
+  "failedAttempts": 0,
+  "__v": 0
+}]

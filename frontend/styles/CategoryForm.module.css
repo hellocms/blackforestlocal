@@ -1,0 +1,18 @@
+.formContainer {
+    margin: 2rem auto;
+    padding: 2rem;
+    width: 90%;
+    max-width: 600px;
+    background-color: #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border-radius: 8px;
+  }
+  
+  /* Make form fields more compact on smaller screens */
+  @media (max-width: 768px) {
+    .formContainer {
+      width: 95%;
+      padding: 1rem;
+    }
+  }
+  
