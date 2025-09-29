@@ -1,5 +1,5 @@
 const Category = require('../models/Category');
-const Department = require('../models/Department'); // New: Import for validation
+const Department = require('../models/Department');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -27,7 +27,7 @@ exports.createCategory = async (req, res) => {
     if (err) return res.status(500).json({ message: 'File upload error', error: err });
 
     try {
-      const { name, parent, department, isPastryProduct, isCake, isBiling } = req.body; // Updated: Include department
+      const { name, parent, department, isPastryProduct, isCake, isBiling } = req.body;
       console.log('Uploaded File:', req.file);
       const image = req.file ? path.join('uploads/categories', req.file.filename) : null;
 
@@ -39,7 +39,6 @@ exports.createCategory = async (req, res) => {
         if (!parentExists) return res.status(404).json({ message: 'Parent category not found' });
       }
 
-      // New: Validate department if provided
       if (department && department !== 'null') {
         const deptExists = await Department.findById(department);
         if (!deptExists) return res.status(404).json({ message: 'Department not found' });
@@ -48,7 +47,7 @@ exports.createCategory = async (req, res) => {
       const category = new Category({
         name,
         parent: parent || null,
-        department: department && department !== 'null' ? department : null, // New: Set department
+        department: department && department !== 'null' ? department : null,
         image,
         isPastryProduct: isPastryProduct === 'true' || isPastryProduct === true,
         isCake: isCake === 'true' || isCake === true,
@@ -56,6 +55,16 @@ exports.createCategory = async (req, res) => {
       });
 
       await category.save();
+
+      // Invalidate Redis cache
+      const redis = req.app.get('redis');
+      await redis.del('categories:all');
+      if (isPastryProduct) await redis.del('categories:type:pastry');
+      if (isCake) await redis.del('categories:type:cake');
+      if (isBiling) await redis.del('categories:type:biling');
+      if (parent) await redis.del(`categories:parent:${parent}`);
+      if (department && department !== 'null') await redis.del(`categories:department:${department}`);
+
       res.status(201).json({ message: '✅ Category created successfully', category });
     } catch (error) {
       console.error('❌ Error creating category:', error);
@@ -67,8 +76,41 @@ exports.createCategory = async (req, res) => {
 // Get All Categories
 exports.getCategories = async (req, res) => {
   try {
-    // Updated: Populate both parent and department
-    const categories = await Category.find().populate('parent', 'name').populate('department', 'name');
+    const redis = req.app.get('redis');
+    const typeFilter = req.query.type;
+    const departmentId = req.query.departmentId; // New: Support department filter
+
+    // Define cache key based on filters
+    let cacheKey = 'categories:all';
+    if (typeFilter) cacheKey = `categories:type:${typeFilter}`;
+    if (departmentId) cacheKey = `categories:department:${departmentId}`;
+
+    // Check Redis cache
+    const cachedCategories = await redis.get(cacheKey);
+    if (cachedCategories) {
+      console.log(`✅ Serving categories from Redis cache: ${cacheKey}`);
+      return res.status(200).json(JSON.parse(cachedCategories));
+    }
+
+    // Cache miss: Fetch from MongoDB
+    let query = Category.find();
+    if (typeFilter === 'pastry') {
+      query = query.where('isPastryProduct').equals(true);
+    } else if (typeFilter === 'cake') {
+      query = query.where('isCake').equals(true);
+    } else if (typeFilter === 'biling') {
+      query = query.where('isBiling').equals(true);
+    }
+    if (departmentId) {
+      query = query.where('department').equals(departmentId);
+    }
+
+    const categories = await query.populate('parent', 'name').populate('department', 'name').lean();
+
+    // Cache the result for 1 week (604800 seconds)
+    await redis.set(cacheKey, JSON.stringify(categories), 'EX', 604800);
+    console.log(`✅ Cached categories in Redis: ${cacheKey}`);
+
     res.status(200).json(categories);
   } catch (error) {
     console.error('❌ Error fetching categories:', error);
@@ -83,7 +125,7 @@ exports.updateCategory = async (req, res) => {
 
     try {
       const { id } = req.params;
-      const { name, parent, department, isPastryProduct, isCake, isBiling } = req.body; // Updated: Include department
+      const { name, parent, department, isPastryProduct, isCake, isBiling } = req.body;
       const image = req.file ? path.join('uploads/categories', req.file.filename) : null;
 
       const category = await Category.findById(id);
@@ -98,7 +140,6 @@ exports.updateCategory = async (req, res) => {
         if (parent === id) return res.status(400).json({ message: 'Category cannot be its own parent' });
       }
 
-      // New: Validate department if provided
       if (department && department !== 'null') {
         const deptExists = await Department.findById(department);
         if (!deptExists) return res.status(404).json({ message: 'Department not found' });
@@ -111,15 +152,33 @@ exports.updateCategory = async (req, res) => {
         });
       }
 
+      const oldParent = category.parent?.toString();
+      const oldDepartment = category.department?.toString();
+      const oldIsPastryProduct = category.isPastryProduct;
+      const oldIsCake = category.isCake;
+      const oldIsBiling = category.isBiling;
+
       category.name = name || category.name;
       category.parent = parent && parent !== 'null' ? parent : null;
-      category.department = department && department !== 'null' ? department : null; // New: Update department
+      category.department = department && department !== 'null' ? department : null;
       category.image = image || category.image;
       category.isPastryProduct = isPastryProduct !== undefined ? (isPastryProduct === 'true' || isPastryProduct === true) : category.isPastryProduct;
       category.isCake = isCake !== undefined ? (isCake === 'true' || isCake === true) : category.isCake;
       category.isBiling = isBiling !== undefined ? (isBiling === 'true' || isBiling === true) : category.isBiling;
 
       await category.save();
+
+      // Invalidate Redis cache
+      const redis = req.app.get('redis');
+      await redis.del('categories:all');
+      if (oldIsPastryProduct || category.isPastryProduct) await redis.del('categories:type:pastry');
+      if (oldIsCake || category.isCake) await redis.del('categories:type:cake');
+      if (oldIsBiling || category.isBiling) await redis.del('categories:type:biling');
+      if (oldParent) await redis.del(`categories:parent:${oldParent}`);
+      if (parent && parent !== 'null') await redis.del(`categories:parent:${parent}`);
+      if (oldDepartment) await redis.del(`categories:department:${oldDepartment}`);
+      if (department && department !== 'null') await redis.del(`categories:department:${department}`);
+
       res.status(200).json({ message: '✅ Category updated successfully', category });
     } catch (error) {
       console.error('❌ Error updating category:', error);
@@ -150,6 +209,16 @@ exports.deleteCategory = async (req, res) => {
     }
 
     await Category.findByIdAndDelete(id);
+
+    // Invalidate Redis cache
+    const redis = req.app.get('redis');
+    await redis.del('categories:all');
+    if (category.isPastryProduct) await redis.del('categories:type:pastry');
+    if (category.isCake) await redis.del('categories:type:cake');
+    if (category.isBiling) await redis.del('categories:type:biling');
+    if (category.parent) await redis.del(`categories:parent:${category.parent}`);
+    if (category.department) await redis.del(`categories:department:${category.department}`);
+
     res.status(200).json({ message: '✅ Category deleted successfully' });
   } catch (error) {
     console.error('❌ Error deleting category:', error);

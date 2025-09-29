@@ -95,6 +95,12 @@ exports.createProduct = async (req, res) => {
         .populate('dealers', 'dealer_name')
         .populate('company', 'name')
         .populate('album', 'name');
+
+      // Invalidate Redis cache
+      const redis = req.app.get('redis');
+      await redis.del('products:all');
+      await redis.del(`products:category:${category}`);
+
       res.status(201).json({ message: '✅ Product created successfully!', product: populatedProduct });
     } catch (error) {
       console.error('❌ Backend Error:', error);
@@ -148,7 +154,6 @@ exports.updateProduct = async (req, res) => {
         }));
       }
 
-      // Handle image updates
       let updatedImages = product.images;
       if (removedImages) {
         let imagesToRemove;
@@ -157,9 +162,7 @@ exports.updateProduct = async (req, res) => {
           if (!Array.isArray(imagesToRemove)) {
             return res.status(400).json({ message: 'Invalid removedImages format' });
           }
-          // Remove specified images from product.images
           updatedImages = updatedImages.filter(img => !imagesToRemove.includes(img));
-          // Delete removed images from file system
           imagesToRemove.forEach(image => {
             const imagePath = path.join(__dirname, '../uploads', image);
             fs.unlink(imagePath, (err) => {
@@ -171,11 +174,11 @@ exports.updateProduct = async (req, res) => {
         }
       }
 
-      // Append new images
       if (req.files && req.files.length > 0) {
         updatedImages = [...updatedImages, ...req.files.map(file => file.filename)];
       }
 
+      const oldCategory = product.category.toString();
       product.name = name || product.name;
       product.category = category || product.category;
       product.dealers = parsedDealers.length > 0 ? parsedDealers : product.dealers;
@@ -192,6 +195,16 @@ exports.updateProduct = async (req, res) => {
       product.isPastry = isPastry !== undefined ? (isPastry === 'true' || isPastry === true) : product.isPastry;
 
       await product.save();
+
+      // Invalidate Redis cache
+      const redis = req.app.get('redis');
+      await redis.del('products:all');
+      await redis.del(`products:category:${oldCategory}`);
+      if (category && category !== oldCategory) {
+        await redis.del(`products:category:${category}`);
+      }
+      await redis.del(`product:${id}`);
+
       const populatedProduct = await Product.findById(product._id)
         .populate('category', 'name')
         .populate('dealers', 'dealer_name')
@@ -207,11 +220,35 @@ exports.updateProduct = async (req, res) => {
 
 exports.getProducts = async (req, res) => {
   try {
-    const products = await Product.find()
+    const redis = req.app.get('redis');
+    const categoryId = req.query.categoryId;
+
+    // Define cache key based on whether category filter is applied
+    const cacheKey = categoryId ? `products:category:${categoryId}` : 'products:all';
+
+    // Check Redis cache
+    const cachedProducts = await redis.get(cacheKey);
+    if (cachedProducts) {
+      console.log(`✅ Serving products from Redis cache: ${cacheKey}`);
+      return res.status(200).json(JSON.parse(cachedProducts));
+    }
+
+    // Cache miss: Fetch from MongoDB
+    let query = Product.find();
+    if (categoryId) {
+      query = query.where('category').equals(categoryId);
+    }
+    const products = await query
       .populate('category', 'name')
       .populate('dealers', 'dealer_name')
       .populate('company', 'name')
-      .populate('album', 'name');
+      .populate('album', 'name')
+      .lean();
+
+    // Cache the result for 1 week (604800 seconds)
+    await redis.set(cacheKey, JSON.stringify(products), 'EX', 604800);
+    console.log(`✅ Cached products in Redis: ${cacheKey}`);
+
     res.status(200).json(products);
   } catch (error) {
     console.error('❌ Error fetching products:', error);
@@ -221,12 +258,29 @@ exports.getProducts = async (req, res) => {
 
 exports.getProductById = async (req, res) => {
   try {
+    const redis = req.app.get('redis');
+    const cacheKey = `product:${req.params.id}`;
+
+    // Check Redis cache
+    const cachedProduct = await redis.get(cacheKey);
+    if (cachedProduct) {
+      console.log(`✅ Serving product from Redis cache: ${cacheKey}`);
+      return res.status(200).json(JSON.parse(cachedProduct));
+    }
+
+    // Cache miss: Fetch from MongoDB
     const product = await Product.findById(req.params.id)
       .populate('category', 'name')
       .populate('dealers', 'dealer_name')
       .populate('company', 'name')
-      .populate('album', 'name');
+      .populate('album', 'name')
+      .lean();
     if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    // Cache the result for 1 week (604800 seconds)
+    await redis.set(cacheKey, JSON.stringify(product), 'EX', 604800);
+    console.log(`✅ Cached product in Redis: ${cacheKey}`);
+
     res.status(200).json(product);
   } catch (error) {
     console.error('❌ Error fetching product:', error);
@@ -250,6 +304,13 @@ exports.deleteProduct = async (req, res) => {
 
     await Inventory.deleteMany({ productId: product._id });
     await Product.findByIdAndDelete(req.params.id);
+
+    // Invalidate Redis cache
+    const redis = req.app.get('redis');
+    await redis.del('products:all');
+    await redis.del(`products:category:${product.category}`);
+    await redis.del(`product:${req.params.id}`);
+
     res.status(200).json({ message: 'Product deleted successfully' });
   } catch (error) {
     console.error('❌ Error deleting product:', error);
