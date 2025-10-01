@@ -21,6 +21,14 @@ const EmployeeListPage = () => {
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001';
 
+  // Helper to get image src: use full URL if it's a Blob URL (starts with http), else prefix for legacy local paths
+  const getImageSrc = (imagePath) => {
+    if (imagePath && imagePath.startsWith('http')) {
+      return imagePath; // Direct Blob URL
+    }
+    return imagePath ? `${BACKEND_URL}/${imagePath}` : null;
+  };
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -96,15 +104,15 @@ const EmployeeListPage = () => {
       uid: '-1',
       name: employee.aadhaar.split('/').pop(),
       status: 'done',
-      url: `${BACKEND_URL}/${employee.aadhaar}`,
+      url: getImageSrc(employee.aadhaar),
     }] : []);
     setFileListPhoto(employee.photo ? [{
       uid: '-2',
       name: employee.photo.split('/').pop(),
       status: 'done',
-      url: `${BACKEND_URL}/${employee.photo}`,
+      url: getImageSrc(employee.photo),
     }] : []);
-    setPreviewImage(employee.photo ? `${BACKEND_URL}/${employee.photo}` : null);
+    setPreviewImage(getImageSrc(employee.photo));
     setEditVisible(true);
   };
 
@@ -235,8 +243,8 @@ const EmployeeListPage = () => {
       title: 'Photo',
       dataIndex: 'photo',
       key: 'photo',
-      render: (photo) => photo ? (
-        <Image src={`${BACKEND_URL}/${photo}`} alt="Employee Photo" style={{ maxWidth: '50px', maxHeight: '50px' }} />
+      render: (photo) => getImageSrc(photo) ? (
+        <Image src={getImageSrc(photo)} alt="Employee Photo" style={{ maxWidth: '50px', maxHeight: '50px' }} />
       ) : 'No Photo',
     },
     {

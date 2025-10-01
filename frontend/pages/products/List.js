@@ -25,7 +25,15 @@ const ProductList = () => {
   const [pageSize, setPageSize] = useState(10);
   const router = useRouter();
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || ' http://localhost:5001';
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001';
+
+  // Helper to get image src: use full URL if it's a Blob URL (starts with http), else prefix for legacy local paths
+  const getImageSrc = (imagePath) => {
+    if (imagePath && imagePath.startsWith('http')) {
+      return imagePath; // Direct Blob URL
+    }
+    return imagePath ? `${BACKEND_URL}/uploads/${imagePath}` : null;
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -221,7 +229,7 @@ const ProductList = () => {
 
   // Handle Image Preview
   const handleImagePreview = (images) => {
-    setPreviewImages(images.map(img => `${BACKEND_URL}/uploads/${img}`));
+    setPreviewImages(images.map(img => getImageSrc(img)));
     setPreviewVisible(true);
   };
 

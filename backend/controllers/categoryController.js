@@ -1,24 +1,10 @@
 const Category = require('../models/Category');
 const Department = require('../models/Department');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { put, del } = require('@vercel/blob');
 
-// Ensure uploads/categories directory exists
-const uploadDir = path.join(__dirname, '../Uploads/categories');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure multer for single image upload to uploads/categories
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  },
-});
+// Configure multer for single image upload to memory (for Vercel Blob)
+const storage = multer.memoryStorage();
 const upload = multer({ storage }).single('image');
 
 // Create Category
@@ -29,7 +15,11 @@ exports.createCategory = async (req, res) => {
     try {
       const { name, parent, departments, isPastryProduct, isCake, isBiling } = req.body;
       console.log('Uploaded File:', req.file);
-      const image = req.file ? path.join('Uploads/categories', req.file.filename) : null;
+      let image = null;
+      if (req.file) {
+        const blob = await put(`uploads/categories/${Date.now()}-${req.file.originalname}`, req.file.buffer, { access: 'public' });
+        image = blob.url;
+      }
 
       const existingCategory = await Category.findOne({ name });
       if (existingCategory) return res.status(400).json({ message: 'Category name already exists' });
@@ -110,7 +100,11 @@ exports.updateCategory = async (req, res) => {
     try {
       const { id } = req.params;
       const { name, parent, departments, isPastryProduct, isCake, isBiling } = req.body;
-      const image = req.file ? path.join('Uploads/categories', req.file.filename) : null;
+      let image = null;
+      if (req.file) {
+        const blob = await put(`uploads/categories/${Date.now()}-${req.file.originalname}`, req.file.buffer, { access: 'public' });
+        image = blob.url;
+      }
 
       const category = await Category.findById(id);
       if (!category) return res.status(404).json({ message: 'Category not found' });
@@ -140,11 +134,13 @@ exports.updateCategory = async (req, res) => {
         }
       }
 
-      if (image && category.image) {
-        const oldImagePath = path.join(__dirname, '..', category.image);
-        fs.unlink(oldImagePath, (err) => {
-          if (err) console.error('Error deleting old image:', err);
-        });
+      // Delete old image from Blob if new image is uploaded
+      if (req.file && category.image) {
+        try {
+          await del(category.image);
+        } catch (deleteError) {
+          console.error('Error deleting old image from Blob:', deleteError);
+        }
       }
 
       category.name = name || category.name;
@@ -177,11 +173,13 @@ exports.deleteCategory = async (req, res) => {
       return res.status(400).json({ message: 'Cannot delete category with subcategories' });
     }
 
+    // Delete image from Blob if exists
     if (category.image) {
-      const imagePath = path.join(__dirname, '..', category.image);
-      fs.unlink(imagePath, (err) => {
-        if (err) console.error('Error deleting image:', err);
-      });
+      try {
+        await del(category.image);
+      } catch (deleteError) {
+        console.error('Error deleting image from Blob:', deleteError);
+      }
     }
 
     await Category.findByIdAndDelete(id);

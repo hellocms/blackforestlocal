@@ -19,7 +19,15 @@ const CategoryListPage = () => {
   const [form] = Form.useForm();
   const router = useRouter();
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || ' http://localhost:5001';
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001';
+
+  // Helper to get image src: use full URL if it's a Blob URL (starts with http), else prefix for legacy local paths
+  const getImageSrc = (imagePath) => {
+    if (imagePath && imagePath.startsWith('http')) {
+      return imagePath; // Direct Blob URL
+    }
+    return imagePath ? `${BACKEND_URL}/${imagePath}` : null;
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -109,13 +117,14 @@ const CategoryListPage = () => {
       isCake: category.isCake || false,
       isBiling: category.isBiling || false,
     });
+    const imageSrc = getImageSrc(category.image);
     setFileList(category.image ? [{
       uid: '-1',
       name: category.image.split('/').pop(),
       status: 'done',
-      url: `${BACKEND_URL}/${category.image}`,
+      url: imageSrc,
     }] : []);
-    setPreviewImage(category.image ? `${BACKEND_URL}/${category.image}` : null);
+    setPreviewImage(imageSrc);
     setEditVisible(true);
   };
 
@@ -259,9 +268,12 @@ const CategoryListPage = () => {
       title: 'Image',
       dataIndex: 'image',
       key: 'image',
-      render: (image) => image ? (
-        <img src={`${BACKEND_URL}/${image}`} alt="Category" style={{ maxWidth: '50px', maxHeight: '50px' }} />
-      ) : 'No Image',
+      render: (image) => {
+        const imageSrc = getImageSrc(image);
+        return imageSrc ? (
+          <img src={imageSrc} alt="Category" style={{ maxWidth: '50px', maxHeight: '50px' }} />
+        ) : 'No Image';
+      },
     },
     {
       title: 'Actions',

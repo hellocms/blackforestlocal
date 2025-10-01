@@ -1,30 +1,15 @@
 const Employee = require('../models/Employee');
 const Order = require('../models/Order'); // Assume an Orders model exists
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { put, del } = require('@vercel/blob');
 
-// Ensure uploads/employees directory exists
-const uploadDir = path.join(__dirname, '../uploads/employees');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure multer for two uploads (Aadhaar and photo)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  },
-});
+// Configure multer for two uploads (Aadhaar and photo) to memory (for Vercel Blob)
+const storage = multer.memoryStorage();
 const upload = multer({ storage }).fields([
   { name: 'aadhaar', maxCount: 1 }, // Optional Aadhaar
   { name: 'photo', maxCount: 1 },   // Required photo
 ]);
 
-// Get All Employees
 // Get All Employees with optional team filter
 exports.getEmployees = async (req, res) => {
   try {
@@ -51,8 +36,17 @@ exports.createEmployee = async (req, res) => {
 
     try {
       const { name, phoneNumber, address, team } = req.body;
-      const aadhaar = req.files['aadhaar'] ? path.join('uploads/employees', req.files['aadhaar'][0].filename) : null;
-      const photo = req.files['photo'] ? path.join('uploads/employees', req.files['photo'][0].filename) : null;
+      let aadhaar = null;
+      let photo = null;
+
+      if (req.files['aadhaar']) {
+        const blob = await put(`uploads/employees/aadhaar/${Date.now()}-${req.files['aadhaar'][0].originalname}`, req.files['aadhaar'][0].buffer, { access: 'public' });
+        aadhaar = blob.url;
+      }
+      if (req.files['photo']) {
+        const blob = await put(`uploads/employees/${Date.now()}-${req.files['photo'][0].originalname}`, req.files['photo'][0].buffer, { access: 'public' });
+        photo = blob.url;
+      }
 
       if (!photo) return res.status(400).json({ message: 'Photo is required' });
 
@@ -86,8 +80,17 @@ exports.updateEmployee = async (req, res) => {
     try {
       const { id } = req.params;
       const { name, phoneNumber, address, team, status } = req.body;
-      const aadhaar = req.files['aadhaar'] ? path.join('uploads/employees', req.files['aadhaar'][0].filename) : null;
-      const photo = req.files['photo'] ? path.join('uploads/employees', req.files['photo'][0].filename) : null;
+      let aadhaar = null;
+      let photo = null;
+
+      if (req.files['aadhaar']) {
+        const blob = await put(`uploads/employees/aadhaar/${Date.now()}-${req.files['aadhaar'][0].originalname}`, req.files['aadhaar'][0].buffer, { access: 'public' });
+        aadhaar = blob.url;
+      }
+      if (req.files['photo']) {
+        const blob = await put(`uploads/employees/${Date.now()}-${req.files['photo'][0].originalname}`, req.files['photo'][0].buffer, { access: 'public' });
+        photo = blob.url;
+      }
 
       const employee = await Employee.findById(id);
       if (!employee) return res.status(404).json({ message: 'Employee not found' });
@@ -98,14 +101,20 @@ exports.updateEmployee = async (req, res) => {
         if (existingPhone) return res.status(400).json({ message: 'Phone number already exists' });
       }
 
-      // Handle file updates/deletions
-      if (aadhaar && employee.aadhaar) {
-        const oldAadhaarPath = path.join(__dirname, '..', employee.aadhaar);
-        fs.unlink(oldAadhaarPath, (err) => { if (err) console.error('Error deleting old Aadhaar:', err); });
+      // Delete old files from Blob if new ones are uploaded
+      if (req.files['aadhaar'] && employee.aadhaar) {
+        try {
+          await del(employee.aadhaar);
+        } catch (deleteError) {
+          console.error('Error deleting old Aadhaar from Blob:', deleteError);
+        }
       }
-      if (photo && employee.photo) {
-        const oldPhotoPath = path.join(__dirname, '..', employee.photo);
-        fs.unlink(oldPhotoPath, (err) => { if (err) console.error('Error deleting old photo:', err); });
+      if (req.files['photo'] && employee.photo) {
+        try {
+          await del(employee.photo);
+        } catch (deleteError) {
+          console.error('Error deleting old photo from Blob:', deleteError);
+        }
       }
 
       employee.name = name || employee.name;
@@ -167,14 +176,20 @@ exports.deleteEmployee = async (req, res) => {
       });
     }
 
-    // Delete associated files if they exist
+    // Delete associated files from Blob if they exist
     if (employee.aadhaar) {
-      const aadhaarPath = path.join(__dirname, '..', employee.aadhaar);
-      fs.unlink(aadhaarPath, (err) => { if (err) console.error('Error deleting Aadhaar:', err); });
+      try {
+        await del(employee.aadhaar);
+      } catch (deleteError) {
+        console.error('Error deleting Aadhaar from Blob:', deleteError);
+      }
     }
     if (employee.photo) {
-      const photoPath = path.join(__dirname, '..', employee.photo);
-      fs.unlink(photoPath, (err) => { if (err) console.error('Error deleting photo:', err); });
+      try {
+        await del(employee.photo);
+      } catch (deleteError) {
+        console.error('Error deleting photo from Blob:', deleteError);
+      }
     }
 
     await Employee.findByIdAndDelete(id);

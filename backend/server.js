@@ -32,21 +32,14 @@ const departmentRoutes = require('./routes/departmentRoutes');
 
 const app = express();
 
-// Ensure the uploads/products directory exists
-const uploadDir = path.join(__dirname, 'uploads/products');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log('Upload directory created:', uploadDir);
-}
-
 // Middleware
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
-// Serve static files from the uploads directory
-app.use('/uploads', express.static(path.join(__dirname, 'Uploads')));
+// Serve static files from the uploads directory (lowercase, as you updated)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes
 app.use('/api/financial', (req, res, next) => {

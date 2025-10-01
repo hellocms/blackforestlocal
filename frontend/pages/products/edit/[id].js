@@ -24,6 +24,14 @@ const EditProductForm = () => {
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001';
 
+  // Helper to get image src: use full URL if it's a Blob URL (starts with http), else prefix for legacy local paths
+  const getImageSrc = (imagePath) => {
+    if (imagePath && imagePath.startsWith('http')) {
+      return imagePath; // Direct Blob URL
+    }
+    return imagePath ? `${BACKEND_URL}/uploads/${imagePath}` : null;
+  };
+
   const fetchCategories = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -130,10 +138,10 @@ const EditProductForm = () => {
           uid: index,
           name: img,
           status: 'done',
-          url: `${BACKEND_URL}/uploads/${img}`, // Changed to lowercase 'uploads'
+          url: getImageSrc(img),
         })));
         setAvailable(product.available);
-        setIsCakeProduct(product.productType === 'cake'); // Fixed typo: setIsCakegevProduct -> setIsCakeProduct
+        setIsCakeProduct(product.productType === 'cake');
         setIsVeg(product.isVeg);
         setIsPastry(product.isPastry);
       } else {
@@ -407,8 +415,7 @@ const EditProductForm = () => {
             onRemove={(file) => {
               setImageList(imageList.filter((item) => item.uid !== file.uid));
               if (file.url) {
-                const filename = file.url.split('/').pop();
-                setRemovedImages([...removedImages, filename]);
+                setRemovedImages([...removedImages, file.url]);
               }
             }}
           >

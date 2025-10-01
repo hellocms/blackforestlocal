@@ -15,6 +15,14 @@ const EmployeeCreatePage = () => {
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001';
 
+  // Helper to get image src: use full URL if it's a Blob URL (starts with http), else prefix for legacy local paths
+  const getImageSrc = (imagePath) => {
+    if (imagePath && imagePath.startsWith('http')) {
+      return imagePath; // Direct Blob URL
+    }
+    return imagePath ? `${BACKEND_URL}/${imagePath}` : null;
+  };
+
   const onFinish = async (values) => {
     setLoading(true);
     const formData = new FormData();
@@ -50,7 +58,7 @@ const EmployeeCreatePage = () => {
         setFileListAadhaar([]);
         setFileListPhoto([]);
         setPreviewImage(null);
-        router.push('/employees');
+        router.push('/employees/List');
       } else {
         message.error(data.message || 'Failed to create employee');
       }
@@ -63,7 +71,7 @@ const EmployeeCreatePage = () => {
   const handleAadhaarUpload = (file) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      setFileListAadhaar([{ ...file, originFileObj: file }]);
+      setFileListAadhaar([{ ...file, originFileObj: file, url: e.target.result }]);
     };
     reader.readAsDataURL(file);
     return false;

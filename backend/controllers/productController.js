@@ -3,13 +3,9 @@ const Inventory = require('../models/Inventory');
 const mongoose = require('mongoose');
 const bwipjs = require('bwip-js');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { put, del } = require('@vercel/blob');
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/'),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-});
+const storage = multer.memoryStorage();
 const upload = multer({ storage }).array('images', 5);
 
 exports.createProduct = async (req, res) => {
@@ -57,7 +53,14 @@ exports.createProduct = async (req, res) => {
         }));
       }
 
-      const images = req.files.map(file => file.filename);
+      const imageUrls = [];
+      if (req.files && req.files.length > 0) {
+        for (const file of req.files) {
+          const blob = await put(`uploads/products/${Date.now()}-${file.originalname}`, file.buffer, { access: 'public' });
+          imageUrls.push(blob.url);
+        }
+      }
+
       const lastProduct = await Product.findOne().sort({ productId: -1 });
       const nextProductId = lastProduct ? String(parseInt(lastProduct.productId) + 1).padStart(5, '0') : '00001';
 
@@ -66,13 +69,13 @@ exports.createProduct = async (req, res) => {
       const checkDigit = calculateEAN13CheckDigit(eanWithoutCheckDigit);
       const generatedUPC = eanWithoutCheckDigit + checkDigit;
 
-      const barcodePath = `uploads/barcodes/${nextProductId}.png`;
-      await generateBarcode(generatedUPC, barcodePath);
+      const barcodeBlob = await generateBarcode(generatedUPC, `uploads/barcodes/${nextProductId}.png`);
+      const barcodeUrl = barcodeBlob.url;
 
       const newProduct = new Product({
         productId: nextProductId,
         upc: generatedUPC,
-        barcode: barcodePath,
+        barcode: barcodeUrl,
         name,
         category,
         dealers: parsedDealers,
@@ -83,7 +86,7 @@ exports.createProduct = async (req, res) => {
         foodNotes,
         ingredients,
         available: available === 'true',
-        images,
+        images: imageUrls,
         priceDetails,
         isVeg: isVeg === 'false' ? false : true,
         isPastry: isPastry === 'true' || isPastry === true,
@@ -157,20 +160,27 @@ exports.updateProduct = async (req, res) => {
           if (!Array.isArray(imagesToRemove)) {
             return res.status(400).json({ message: 'Invalid removedImages format' });
           }
+          // Delete removed images from Blob
+          for (const imageUrl of imagesToRemove) {
+            try {
+              await del(imageUrl);
+            } catch (deleteError) {
+              console.error('Error deleting image from Blob:', deleteError);
+            }
+          }
           updatedImages = updatedImages.filter(img => !imagesToRemove.includes(img));
-          imagesToRemove.forEach(image => {
-            const imagePath = path.join(__dirname, '../uploads', image);
-            fs.unlink(imagePath, (err) => {
-              if (err) console.error('Error deleting image:', err);
-            });
-          });
         } catch (error) {
           return res.status(400).json({ message: 'Invalid removedImages format' });
         }
       }
 
+      const newImageUrls = [];
       if (req.files && req.files.length > 0) {
-        updatedImages = [...updatedImages, ...req.files.map(file => file.filename)];
+        for (const file of req.files) {
+          const blob = await put(`uploads/products/${Date.now()}-${file.originalname}`, file.buffer, { access: 'public' });
+          newImageUrls.push(blob.url);
+        }
+        updatedImages = [...updatedImages, ...newImageUrls];
       }
 
       const oldCategory = product.category.toString();
@@ -250,13 +260,24 @@ exports.deleteProduct = async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    if (product.images.length > 0) {
-      product.images.forEach(image => {
-        const imagePath = path.join(__dirname, '../uploads', image);
-        fs.unlink(imagePath, (err) => {
-          if (err) console.error('Error deleting image:', err);
-        });
-      });
+    // Delete images from Blob
+    if (product.images && product.images.length > 0) {
+      for (const imageUrl of product.images) {
+        try {
+          await del(imageUrl);
+        } catch (deleteError) {
+          console.error('Error deleting image from Blob:', deleteError);
+        }
+      }
+    }
+
+    // Delete barcode from Blob
+    if (product.barcode) {
+      try {
+        await del(product.barcode);
+      } catch (deleteError) {
+        console.error('Error deleting barcode from Blob:', deleteError);
+      }
     }
 
     await Inventory.deleteMany({ productId: product._id });
@@ -278,13 +299,18 @@ async function generateBarcode(upc, barcodePath) {
       height: 20,
       includetext: true,
       textxalign: 'center',
-    }, (err, png) => {
+    }, async (err, png) => {
       if (err) {
         console.error('❌ Error generating barcode:', err);
         reject(err);
       } else {
-        fs.writeFileSync(barcodePath, png);
-        resolve();
+        try {
+          const blob = await put(barcodePath, png, { access: 'public' });
+          resolve(blob);
+        } catch (putError) {
+          console.error('Error uploading barcode to Blob:', putError);
+          reject(putError);
+        }
       }
     });
   });
