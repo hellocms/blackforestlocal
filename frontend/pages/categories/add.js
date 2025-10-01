@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Select, Upload, message, Checkbox, Row, Col } from 'antd';
+import { Form, Input, Button, Select, Checkbox, Upload, message, Row, Col } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/router';
 
@@ -8,7 +8,7 @@ const { Option } = Select;
 const AddCategoryPage = () => {
   const [form] = Form.useForm();
   const [categories, setCategories] = useState([]);
-  const [departments, setDepartments] = useState([]); // New: Departments state
+  const [departments, setDepartments] = useState([]);
   const [fileList, setFileList] = useState([]);
   const [previewImage, setPreviewImage] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ const AddCategoryPage = () => {
   });
   const router = useRouter();
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001';
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || ' http://localhost:5001';
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -28,7 +28,7 @@ const AddCategoryPage = () => {
       router.push('/login');
     } else {
       fetchCategories(token);
-      fetchDepartments(token); // New: Fetch departments
+      fetchDepartments(token);
     }
   }, [router]);
 
@@ -45,7 +45,6 @@ const AddCategoryPage = () => {
     }
   };
 
-  // New: Fetch departments
   const fetchDepartments = async (token) => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/departments/list-departments`, {
@@ -67,16 +66,12 @@ const AddCategoryPage = () => {
       ...prev,
       [name]: checked,
     }));
-    // Reset parent category selection when any checkbox changes
     form.setFieldsValue({ parent: undefined });
   };
 
-  // Filter categories for parent dropdown based on selected checkboxes
   const filteredParentCategories = categories.filter(category => {
     const { isPastryProduct, isCake, isBiling } = checkboxStates;
-    // If no checkboxes are selected, show all categories
     if (!isPastryProduct && !isCake && !isBiling) return true;
-    // Show categories that match any selected checkbox
     return (
       (isPastryProduct && category.isPastryProduct) ||
       (isCake && category.isCake) ||
@@ -88,12 +83,13 @@ const AddCategoryPage = () => {
     setLoading(true);
     const formData = new FormData();
     formData.append('name', values.name);
-    if (values.department) formData.append('department', values.department); // New: Append department ID
+    if (values.departments && values.departments.length > 0) {
+      formData.append('departments', JSON.stringify(values.departments));
+    }
     if (values.parent) formData.append('parent', values.parent);
     formData.append('isPastryProduct', values.isPastryProduct || false);
     formData.append('isCake', values.isCake || false);
     formData.append('isBiling', values.isBiling || false);
-    console.log('FileList:', fileList);
     if (fileList.length > 0 && fileList[0].originFileObj) {
       formData.append('image', fileList[0].originFileObj);
     }
@@ -141,6 +137,33 @@ const AddCategoryPage = () => {
     showUploadList: false,
   };
 
+  // Custom dropdown render for checkboxes
+  const dropdownRender = (menu) => (
+    <div style={{ padding: '8px' }}>
+      {departments.length > 0 ? (
+        departments.map(dept => (
+          <div key={dept._id} style={{ marginBottom: '8px' }}>
+            <Checkbox
+              value={dept._id}
+              checked={form.getFieldValue('departments')?.includes(dept._id)}
+              onChange={(e) => {
+                const currentValues = form.getFieldValue('departments') || [];
+                const newValues = e.target.checked
+                  ? [...currentValues, dept._id]
+                  : currentValues.filter(id => id !== dept._id);
+                form.setFieldsValue({ departments: newValues });
+              }}
+            >
+              {dept.name}
+            </Checkbox>
+          </div>
+        ))
+      ) : (
+        <div>No departments available</div>
+      )}
+    </div>
+  );
+
   return (
     <div style={{ maxWidth: '400px', margin: '100px auto', padding: '20px', background: '#fff', borderRadius: '8px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
       <h2 style={{ textAlign: 'center' }}>Add Category</h2>
@@ -152,21 +175,23 @@ const AddCategoryPage = () => {
         >
           <Input placeholder="e.g., Pastries" />
         </Form.Item>
-        {/* New: Department Dropdown */}
         <Form.Item
-          label="Department"
-          name="department"
-          rules={[{ required: false }]} // Optional; make required: true if needed
+          label="Departments"
+          name="departments"
+          rules={[{ required: false }]}
         >
-          <Select placeholder="Select a department" allowClear>
-            <Option key="none" value={null}>None</Option>
-            {departments.length > 0 ? (
-              departments.map(dept => (
-                <Option key={dept._id} value={dept._id}>{dept.name}</Option>
-              ))
-            ) : (
-              <Option disabled>No departments available</Option>
-            )}
+          <Select
+            mode="multiple"
+            placeholder="Select departments"
+            allowClear
+            dropdownRender={dropdownRender}
+            style={{ width: '100%' }}
+          >
+            {departments.map(dept => (
+              <Option key={dept._id} value={dept._id} disabled>
+                {dept.name}
+              </Option>
+            ))}
           </Select>
         </Form.Item>
         <Row gutter={16}>

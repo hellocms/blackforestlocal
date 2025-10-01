@@ -12,7 +12,7 @@ const DepartmentManagementPage = () => {
   const [isEditing, setIsEditing] = useState(false); // New: Mode flag
   const router = useRouter();
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001';
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || ' http://localhost:5001';
 
   useEffect(() => {
     const token = localStorage.getItem('token');

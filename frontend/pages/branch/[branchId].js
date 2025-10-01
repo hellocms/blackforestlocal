@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Layout, Button, Space, Row, Col, message, Image, Radio, Badge, Tooltip, Select, Dropdown, Input, Modal, Table, DatePicker, InputNumber } from "antd";
-import { LogoutOutlined, AccountBookFilled, ShoppingCartOutlined, MenuOutlined, ArrowLeftOutlined, CheckCircleFilled, UserOutlined, EyeOutlined, PrinterOutlined, EditOutlined } from "@ant-design/icons";
+import { Layout, Button, Space, Row, Col, message, Image, Badge, Tooltip, Select, Dropdown, Input, InputNumber } from "antd";
+import { LogoutOutlined, AccountBookFilled, ShoppingCartOutlined, MenuOutlined, ArrowLeftOutlined, CheckCircleFilled, UserOutlined } from "@ant-design/icons";
 import { useRouter } from "next/router";
 import { jwtDecode as jwtDecodeLib } from "jwt-decode";
 import CartSider from '../../components/CartSider';
 import moment from 'moment';
-
 const { Header, Content, Sider } = Layout;
 const { Option } = Select;
-const { RangePicker } = DatePicker;
 
 const BillingPage = ({ branchId }) => {
   const router = useRouter();
@@ -20,7 +18,6 @@ const BillingPage = ({ branchId }) => {
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [selectedProductType, setSelectedProductType] = useState(null);
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,16 +41,6 @@ const BillingPage = ({ branchId }) => {
   const [waiters, setWaiters] = useState([]);
   const [touchStartX, setTouchStartX] = useState(null);
   const [activeTab, setActiveTab] = useState("billing");
-  const [isOrderModalVisible, setIsOrderModalVisible] = useState(false);
-  const [orderListTab, setOrderListTab] = useState("stock");
-  const [orders, setOrders] = useState([]);
-  const [orderLoading, setOrderLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState(null);
-  const [dateFilter, setDateFilter] = useState([]);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-  const [editingOrder, setEditingOrder] = useState(null);
-  
 
   const contentRef = useRef(null);
   const inputRefs = useRef({});
@@ -180,40 +167,9 @@ const BillingPage = ({ branchId }) => {
     setProductsLoading(false);
   };
 
-  const fetchOrders = async () => {
-    setOrderLoading(true);
-    try {
-      let url = `${BACKEND_URL}/api/orders?branchId=${branchId}&tab=${orderListTab}`;
-      if (statusFilter) {
-        url += `&status=${statusFilter}`;
-      }
-      if (dateFilter.length === 2) {
-        const [start, end] = dateFilter;
-        url += `&startDate=${start.format('YYYY-MM-DD')}&endDate=${end.format('YYYY-MM-DD')}`;
-      }
-      const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setOrders(data);
-      } else {
-        message.error('Failed to fetch orders');
-        setOrders([]);
-      }
-    } catch (error) {
-      message.error('Error fetching orders');
-      setOrders([]);
-    }
-    setOrderLoading(false);
-  };
-
   // Helper Functions
   const applyFilters = (productList) => {
     let filtered = productList;
-    if (selectedProductType) {
-      filtered = filtered.filter(product => product.productType === selectedProductType);
-    }
     if (searchQuery) {
       filtered = filtered.filter(product =>
         product.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -229,16 +185,8 @@ const BillingPage = ({ branchId }) => {
     }
   };
 
-  const handleProductTypeFilter = (type) => {
-    setSelectedProductType(type);
-    if (selectedCategory) {
-      applyFilters(products);
-    }
-  };
-
   const handleCategoryClick = (category) => {
     setSelectedCategory(category);
-    setSelectedProductType(null);
     setSearchQuery("");
     fetchProducts(category._id);
   };
@@ -265,10 +213,10 @@ const BillingPage = ({ branchId }) => {
             inputRefs.current[`${product._id}-${selectedUnitIndex}`].focus();
           }
         }, 0);
-        return [...prev, { 
-          ...product, 
-          selectedUnitIndex, 
-          count: 1, 
+        return [...prev, {
+          ...product,
+          selectedUnitIndex,
+          count: 1,
           bminstock: 0,
           gstRate
         }];
@@ -279,16 +227,14 @@ const BillingPage = ({ branchId }) => {
   const handleQuantityChange = (productId, selectedUnitIndex, value, unit) => {
     const isKg = unit.toLowerCase().includes('kg');
     let parsedValue = isKg ? parseFloat(value) : parseInt(value, 10);
-    
+
     if (isNaN(parsedValue) || parsedValue <= 0) {
       setSelectedProducts(prev => prev.filter(item => !(item._id === productId)));
       return;
     }
-
     if (!isKg && parsedValue !== Math.floor(parsedValue)) {
       parsedValue = Math.floor(parsedValue);
     }
-
     setSelectedProducts(prev => {
       const existingProduct = prev.find(item => item._id === productId);
       if (existingProduct) {
@@ -323,7 +269,6 @@ const BillingPage = ({ branchId }) => {
     setSelectedCategory(null);
     setProducts([]);
     setFilteredProducts([]);
-    setSelectedProductType(null);
     setSearchQuery("");
     setLastBillNo(null);
   };
@@ -357,7 +302,6 @@ const BillingPage = ({ branchId }) => {
 
   const handleSwipe = (e) => {
     if (!selectedCategory) return;
-
     const touch = e.changedTouches[0];
     const swipeDistance = touch.clientX - touchStartX;
     if (swipeDistance > 50) {
@@ -370,9 +314,7 @@ const BillingPage = ({ branchId }) => {
     setWaiterError("");
     setWaiterName("");
     setSelectedWaiter(null);
-
     if (!value) return;
-
     const waiter = waiters.find(w => w.employeeId === `E${value.padStart(3, '0')}`);
     if (waiter) {
       setWaiterName(waiter.name);
@@ -387,139 +329,11 @@ const BillingPage = ({ branchId }) => {
     setSelectedCategory(null);
     setProducts([]);
     setFilteredProducts([]);
-    setSelectedProductType(null);
     setSearchQuery("");
     setSelectedProducts([]);
     setLastBillNo(null);
     setIsMobileMenuOpen(false);
     message.info(`Switched to ${tab} mode`);
-  };
-
-  const handleOrderModalOpen = () => {
-    setIsOrderModalVisible(true);
-    setOrderListTab("stock");
-    setStatusFilter(null);
-    setDateFilter([]);
-    fetchOrders();
-  };
-
-  const handleOrderModalClose = () => {
-    setIsOrderModalVisible(false);
-    setOrders([]);
-    setSelectedOrder(null);
-  };
-
-  const handleOrderListTabChange = (e) => {
-    setOrderListTab(e.target.value);
-    setStatusFilter(null);
-    setDateFilter([]);
-  };
-
-  const handleStatusFilterChange = (value) => {
-    setStatusFilter(value);
-  };
-
-  const handleDateFilterChange = (dates) => {
-    setDateFilter(dates || []);
-  };
-
-  const handleViewOrder = (order) => {
-    setSelectedOrder(order);
-  };
-
-  const handleEditOrder = (order) => {
-    setEditingOrder({ ...order, products: order.products.map(p => ({ ...p })) });
-    setIsEditModalVisible(true);
-  };
-
-  const handleQuantityEdit = (index, value) => {
-    if (!editingOrder) return;
-    const isKg = editingOrder.products[index].unit.toLowerCase().includes('kg');
-    let parsedValue = isKg ? parseFloat(value) : parseInt(value, 10);
-    
-    if (isNaN(parsedValue) || parsedValue <= 0) {
-      parsedValue = 0;
-    } else if (!isKg && parsedValue !== Math.floor(parsedValue)) {
-      parsedValue = Math.floor(parsedValue);
-    }
-
-    setEditingOrder(prev => ({
-      ...prev,
-      products: prev.products.map((p, i) =>
-        i === index ? { ...p, quantity: parsedValue } : p
-      ),
-    }));
-  };
-
-  const handleReceivedQtyEdit = (index, value) => {
-    if (!editingOrder) return;
-    const isKg = editingOrder.products[index].unit.toLowerCase().includes('kg');
-    let parsedValue = isKg ? parseFloat(value) : parseInt(value, 10);
-   
-    if (isNaN(parsedValue) || parsedValue < 0) {
-      parsedValue = 0;
-    } else if (!isKg && parsedValue !== Math.floor(parsedValue)) {
-      parsedValue = Math.floor(parsedValue);
-    }
-    setEditingOrder(prev => ({
-      ...prev,
-      products: prev.products.map((p, i) =>
-        i === index ? { ...p, receivedQty: parsedValue } : p
-      ),
-    }));
-  };
-
-  
-
-  const handleSaveEdit = async () => {
-    if (!editingOrder) return;
-    const products = editingOrder.products.filter(p => p.quantity > 0).map(p => ({
-      productId: p.productId,
-      name: p.name,
-      quantity: p.quantity,
-      sendingQty: p.sendingQty || 0,  // Include for completeness
-      receivedQty: p.receivedQty || 0,  // Fix: Now includes edited value
-      price: p.price,
-      unit: p.unit,
-      gstRate: p.gstRate,
-      productTotal: p.quantity * p.price,  // Based on quantity (change to receivedQty if needed)
-      productGST: p.gstRate === "non-gst" ? 0 : (p.quantity * p.price * p.gstRate) / 100,  // Recalc
-      bminstock: p.bminstock || 0,
-      confirmed: p.confirmed || false,
-    }));
-    if (products.length === 0) {
-      message.warning('At least one product must have a positive quantity');
-      return;
-    }
-  
-    // Debug: Log to confirm receivedQty is sent
-    console.log('PATCH body products[0]:', products[0]);  // Check receivedQty here
-  
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/orders/${editingOrder._id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ products }),
-      });
-      if (response.ok) {
-        const updatedOrder = await response.json();
-        setOrders(prev =>
-          prev.map(o => (o._id === editingOrder._id ? updatedOrder.order : o))
-        );
-        setIsEditModalVisible(false);
-        setEditingOrder(null);
-        message.success('Order updated successfully');
-      } else {
-        const data = await response.json();
-        message.error(data.message || 'Failed to update order');
-      }
-    } catch (error) {
-      message.error('Error updating order');
-      console.error('Save error:', error);
-    }
   };
 
   const handlePrintOrder = (order) => {
@@ -534,7 +348,6 @@ const BillingPage = ({ branchId }) => {
     const balance = tenderAmount - totalWithGSTRounded;
     const sgst = totalGST / 2;
     const cgst = totalGST / 2;
-
     printReceipt(order, todayAssignment, {
       totalQty,
       totalItems: uniqueItems,
@@ -559,9 +372,7 @@ const BillingPage = ({ branchId }) => {
       message.warning('Please select a payment method!');
       return;
     }
-
     const { totalQty, uniqueItems, subtotal, totalGST, totalWithGST } = calculateCartTotals();
-
     const orderData = {
       branchId,
       tab: activeTab,
@@ -587,7 +398,6 @@ const BillingPage = ({ branchId }) => {
       status: 'draft',
       waiterId: selectedWaiter?._id || null,
     };
-
     try {
       const response = await fetch(`${BACKEND_URL}/api/orders`, {
         method: 'POST',
@@ -597,7 +407,6 @@ const BillingPage = ({ branchId }) => {
         },
         body: JSON.stringify(orderData),
       });
-
       const data = await response.json();
       if (response.ok) {
         message.success(data.message || `Cart saved as draft for ${activeTab}!`);
@@ -624,16 +433,13 @@ const BillingPage = ({ branchId }) => {
       message.warning('Please select a payment method!');
       return;
     }
-
     const { totalQty, uniqueItems, subtotal, totalGST, totalWithGST } = calculateCartTotals();
-
     const totalWithGSTRounded = Math.round(totalWithGST);
     const roundOff = totalWithGSTRounded - totalWithGST;
     const tenderAmount = totalWithGSTRounded;
     const balance = tenderAmount - totalWithGSTRounded;
     const sgst = totalGST / 2;
     const cgst = totalGST / 2;
-
     const orderData = {
       branchId,
       tab: activeTab,
@@ -659,7 +465,6 @@ const BillingPage = ({ branchId }) => {
       status: ['billing'].includes(activeTab) ? 'completed' : 'neworder',
       waiterId: selectedWaiter?._id || null,
     };
-
     try {
       const response = await fetch(`${BACKEND_URL}/api/orders`, {
         method: 'POST',
@@ -669,7 +474,6 @@ const BillingPage = ({ branchId }) => {
         },
         body: JSON.stringify(orderData),
       });
-
       const data = await response.json();
       if (response.ok) {
         message.success(data.message || `Cart saved and ready to print for ${activeTab}!`);
@@ -723,20 +527,17 @@ const BillingPage = ({ branchId }) => {
       minute: '2-digit',
       hour12: true,
     }).replace(',', '');
-
     const waiterInfo = selectedWaiter
       ? `${selectedWaiter.name} (${selectedWaiter.employeeId})`
       : order.waiterId
       ? `${order.waiterId.name}${order.waiterId.employeeId ? ` (${order.waiterId.employeeId})` : ''}`
       : 'Not Assigned';
-
     const iframe = document.createElement('iframe');
     iframe.style.position = 'absolute';
     iframe.style.width = '0';
     iframe.style.height = '0';
     iframe.style.border = 'none';
     document.body.appendChild(iframe);
-
     const doc = iframe.contentWindow.document;
     doc.open();
     doc.write(`
@@ -744,84 +545,84 @@ const BillingPage = ({ branchId }) => {
         <head>
           <title>Receipt</title>
           <style>
-            body { 
-              font-family: 'Courier New', Courier, monospace; 
-              width: 302px; 
-              margin: 0; 
-              padding: 5px; 
-              font-size: 12px; 
-              line-height: 1.3; 
-              color: #000; 
-              font-weight: bold; 
+            body {
+              font-family: 'Courier New', Courier, monospace;
+              width: 302px;
+              margin: 0;
+              padding: 5px;
+              font-size: 12px;
+              line-height: 1.3;
+              color: #000;
+              font-weight: bold;
             }
-            h1 { 
-              text-align: center; 
-              font-size: 18px; 
-              font-weight: bold; 
-              margin: 0 0 3px 0; 
-              color: #000; 
+            h1 {
+              text-align: center;
+              font-size: 18px;
+              font-weight: bold;
+              margin: 0 0 3px 0;
+              color: #000;
             }
-            .header { 
-              display: flex; 
-              justify-content: space-between; 
-              margin-bottom: 5px; 
-              width: 100%; 
-              color: #000; 
-              font-weight: bold; 
+            .header {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 5px;
+              width: 100%;
+              color: #000;
+              font-weight: bold;
             }
-            .header-left { 
-              text-align: left; 
-              max-width: 50%; 
-              overflow: hidden; 
-              text-overflow: ellipsis; 
-              color: #000; 
-              font-weight: bold; 
+            .header-left {
+              text-align: left;
+              max-width: 50%;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              color: #000;
+              font-weight: bold;
             }
-            .header-right { 
-              text-align: right; 
-              max-width: 50%; 
-              color: #000; 
-              font-weight: bold; 
+            .header-right {
+              text-align: right;
+              max-width: 50%;
+              color: #000;
+              font-weight: bold;
             }
-            .header-right p.waiter { 
-              white-space: normal; 
-              overflow: visible; 
-              text-overflow: clip; 
+            .header-right p.waiter {
+              white-space: normal;
+              overflow: visible;
+              text-overflow: clip;
             }
-            p { 
-              margin: 2px 0; 
-              overflow: hidden; 
-              text-overflow: ellipsis; 
-              color: #000; 
-              font-weight: bold; 
+            p {
+              margin: 2px 0;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              color: #000;
+              font-weight: bold;
             }
-            table { 
-              width: 100%; 
-              border-collapse: collapse; 
-              margin-top: 5px; 
-              color: #000; 
-              font-weight: bold; 
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 5px;
+              color: #000;
+              font-weight: bold;
             }
-            th, td { 
-              padding: 5px 2px; 
-              text-align: left; 
-              font-size: 12px; 
-              color: #000; 
-              font-weight: bold; 
-              vertical-align: top; 
+            th, td {
+              padding: 5px 2px;
+              text-align: left;
+              font-size: 12px;
+              color: #000;
+              font-weight: bold;
+              vertical-align: top;
             }
-            th { 
-              font-weight: bold; 
-              color: #000; 
+            th {
+              font-weight: bold;
+              color: #000;
             }
-            .divider { 
-              border-top: 1px dashed #000; 
-              margin: 5px 0; 
+            .divider {
+              border-top: 1px dashed #000;
+              margin: 5px 0;
             }
-            .summary { 
-              margin-top: 5px; 
-              color: #000; 
-              font-weight: bold; 
+            .summary {
+              margin-top: 5px;
+              color: #000;
+              font-weight: bold;
             }
             .summary div {
               display: flex;
@@ -866,16 +667,16 @@ const BillingPage = ({ branchId }) => {
               font-weight: bold;
               font-size: 14px;
             }
-            @media print { 
-              @page { 
-                margin: 0; 
-                size: 80mm auto; 
-              } 
-              body { 
-                margin: 0; 
-                padding: 5px; 
-                width: 302px; 
-              } 
+            @media print {
+              @page {
+                margin: 0;
+                size: 80mm auto;
+              }
+              body {
+                margin: 0;
+                padding: 5px;
+                width: 302px;
+              }
             }
           </style>
         </head>
@@ -958,14 +759,11 @@ const BillingPage = ({ branchId }) => {
       </html>
     `);
     doc.close();
-
     iframe.contentWindow.focus();
     iframe.contentWindow.print();
-
     iframe.contentWindow.onafterprint = () => {
       document.body.removeChild(iframe);
     };
-
     setTimeout(() => {
       if (iframe.parentNode) {
         document.body.removeChild(iframe);
@@ -1073,12 +871,10 @@ const BillingPage = ({ branchId }) => {
     if (typeof window !== 'undefined') {
       const storedToken = localStorage.getItem('token');
       setToken(storedToken);
-
       if (!storedToken) {
         router.replace('/login');
         return;
       }
-
       try {
         const decoded = jwtDecodeLib(storedToken);
         if (decoded.role !== 'branch') {
@@ -1091,54 +887,39 @@ const BillingPage = ({ branchId }) => {
         console.error('Error decoding token:', error);
         router.replace('/login');
       }
-
       fetchBranchDetails(storedToken, branchId);
       fetchCategories(storedToken);
       fetchEmployees(storedToken, 'Cashier', setCashiers);
       fetchEmployees(storedToken, 'Manager', setManagers);
       fetchEmployees(storedToken, 'Waiter', setWaiters);
       fetchTodayAssignment(storedToken);
-
       setIsMobile(window.innerWidth <= 991);
       setIsPortrait(window.matchMedia("(orientation: portrait)").matches);
-
       const updateContentWidth = () => {
         if (contentRef.current) {
           setContentWidth(contentRef.current.getBoundingClientRect().width);
         }
       };
-
       updateContentWidth();
       window.addEventListener("resize", updateContentWidth);
-
       const handleOrientationChange = (e) => {
         setIsPortrait(e.matches);
         setIsMobileMenuOpen(false);
         updateContentWidth();
       };
-
       const mediaQuery = window.matchMedia("(orientation: portrait)");
       mediaQuery.addEventListener("change", handleOrientationChange);
-
       const handleResize = () => {
         setIsMobile(window.innerWidth <= 991);
         updateContentWidth();
       };
-
       window.addEventListener("resize", handleResize);
-
       return () => {
         mediaQuery.removeEventListener("change", handleOrientationChange);
         window.removeEventListener("resize", handleResize);
       };
     }
   }, [router, branchId]);
-
-  useEffect(() => {
-    if (isOrderModalVisible) {
-      fetchOrders();
-    }
-  }, [isOrderModalVisible, orderListTab, statusFilter, dateFilter]);
 
   const userMenu = (
     <div style={{ padding: '10px', background: '#fff', borderRadius: '4px', width: '300px' }}>
@@ -1167,7 +948,6 @@ const BillingPage = ({ branchId }) => {
           </p>
         )}
       </div>
-
       <div style={{ marginBottom: '15px' }}>
         <label style={{ display: 'block', marginBottom: '5px' }}>Select Manager:</label>
         <Select
@@ -1193,221 +973,11 @@ const BillingPage = ({ branchId }) => {
           </p>
         )}
       </div>
-
       <Button type="primary" onClick={saveAssignment} block style={{ marginBottom: '15px' }}>
         Confirm Assignment
       </Button>
     </div>
   );
-
-  // Order list table columns
-  const orderColumns = [
-    {
-      title: 'Bill No',
-      dataIndex: 'billNo',
-      key: 'billNo',
-      width: 100,
-    },
-    {
-      title: 'Date',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      width: 150,
-      render: (date) => moment(date).format('DD-MM-YYYY HH:mm'),
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status) => status.charAt(0).toUpperCase() + status.slice(1),
-    },
-    {
-      title: 'Total',
-      dataIndex: 'totalWithGST',
-      key: 'totalWithGST',
-      width: 100,
-      render: (total) => `₹${total.toFixed(2)}`,
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 200,
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="link"
-            icon={<EyeOutlined />}
-            onClick={() => handleViewOrder(record)}
-          >
-            View
-          </Button>
-          {['draft', 'neworder', 'pending'].includes(record.status) && (
-            <Button
-              type="link"
-              icon={<EditOutlined />}
-              onClick={() => handleEditOrder(record)}
-            >
-              Edit
-            </Button>
-          )}
-          {record.status === 'completed' && (
-            <Button
-              type="link"
-              icon={<PrinterOutlined />}
-              onClick={() => handlePrintOrder(record)}
-            >
-              Print
-            </Button>
-          )}
-        </Space>
-      ),
-    },
-  ];
-
-  // Edit modal columns
-  const editColumns = [
-    { title: 'Item', dataIndex: 'name', key: 'name' },
-    {
-      title: 'Quantity',
-      dataIndex: 'quantity',
-      key: 'quantity',
-      render: (quantity, record, index) => (
-        <InputNumber
-          min={0}
-          value={quantity}
-          onChange={(value) => handleQuantityEdit(index, value)}
-          step={record.unit.toLowerCase().includes('kg') ? 0.1 : 1}
-          style={{ width: 80 }}  // Fixed width to prevent overflow
-        />
-      ),
-    },
-    // Sending Qty (non-editable, as before)
-    {
-      title: 'Sending Qty',
-      dataIndex: 'sendingQty',
-      key: 'sendingQty',
-      render: (sendingQty, record) => (
-        <span
-          style={{
-            color: sendingQty > 0 ? '#52c41a' : '#d9d9d9',
-            fontWeight: sendingQty > 0 ? 'bold' : 'normal',
-            display: 'inline-block',
-            minWidth: '70px',
-            textAlign: 'center',
-          }}
-          title={sendingQty === undefined || sendingQty === 0 ? 'No sending qty assigned' : `Sending: ${sendingQty}${record.unit || ''}`}
-        >
-          {sendingQty || 0}{record.unit ? ` ${record.unit}` : ''}
-        </span>
-      ),
-    },
-    // Updated: Received Qty (now editable InputNumber)
-    {
-      title: 'Received Qty',
-      dataIndex: 'receivedQty',
-      key: 'receivedQty',
-      render: (receivedQty, record, index) => (
-        <InputNumber
-          min={0}
-          value={receivedQty}
-          onChange={(value) => handleReceivedQtyEdit(index, value)}
-          step={record.unit.toLowerCase().includes('kg') ? 0.1 : 1}
-          style={{ width: 80 }}  // Fixed width to prevent overflow
-          placeholder="0"
-        />
-      ),
-    },
-    { title: 'Unit', dataIndex: 'unit', key: 'unit', render: (unit) => unit || 'N/A' },
-    { title: 'Price', dataIndex: 'price', key: 'price', render: (price) => `₹${price.toFixed(2)}` },
-    { title: 'Total', dataIndex: 'productTotal', key: 'productTotal', render: (_, record) => `₹${(record.quantity * record.price).toFixed(2)}` },
-  ];
-
-  // Order details modal content
-  const renderOrderDetails = () => {
-    if (!selectedOrder) return null;
-    return (
-      <div>
-        <p><strong>Bill No:</strong> {selectedOrder.billNo}</p>
-        <p><strong>Date:</strong> {moment(selectedOrder.createdAt).format('DD-MM-YYYY HH:mm')}</p>
-        <p><strong>Status:</strong> {selectedOrder.status.charAt(0).toUpperCase() + selectedOrder.status.slice(1)}</p>
-        <p><strong>Payment Method:</strong> {selectedOrder.paymentMethod || 'N/A'}</p>
-        <p><strong>Waiter:</strong> {selectedOrder.waiterId ? `${selectedOrder.waiterId.name} (${selectedOrder.waiterId.employeeId})` : 'Not Assigned'}</p>
-        <p><strong>Products:</strong></p>
-        <Table
-          dataSource={selectedOrder.products}
-          columns={[
-            { title: 'Item', dataIndex: 'name', key: 'name' },
-            { 
-              title: 'Quantity', 
-              dataIndex: 'quantity', 
-              key: 'quantity', 
-              render: (qty, record) => `${qty}${record.unit}` 
-            },
-            // Sending Qty (existing, same as edit)
-            {
-              title: 'Sending Qty',
-              dataIndex: 'sendingQty',
-              key: 'sendingQty',
-              render: (sendingQty, record) => (
-                <span
-                  style={{
-                    color: sendingQty > 0 ? '#52c41a' : '#d9d9d9',
-                    fontWeight: sendingQty > 0 ? 'bold' : 'normal',
-                    display: 'inline-block',
-                    minWidth: '60px',
-                    textAlign: 'center',
-                  }}
-                  title={sendingQty === undefined || sendingQty === 0 ? 'No sending qty assigned' : `Sending: ${sendingQty}${record.unit || ''}`}
-                >
-                  {sendingQty || 0}{record.unit ? ` ${record.unit}` : ''}
-                </span>
-              ),
-            },
-            // New: Received Qty (same UI/logic as edit)
-
-            {
-              title: 'Received Qty',
-              dataIndex: 'receivedQty',
-              key: 'receivedQty',
-              render: (receivedQty, record) => {
-                const sendingQty = record.sendingQty || 0;
-                const statusColor = receivedQty === sendingQty ? '#52c41a'  // Full match: green
-                  : receivedQty > 0 ? '#faad14'  // Partial: orange
-                  : '#d9d9d9';  // None: gray
-                const statusText = receivedQty === sendingQty ? 'Fully received'
-                  : receivedQty > 0 ? `Partial: ${sendingQty - receivedQty} short`
-                  : 'Not received';
-                return (
-                  <span
-                    style={{
-                      color: statusColor,
-                      fontWeight: receivedQty > 0 ? 'bold' : 'normal',
-                      display: 'inline-block',
-                      minWidth: '70px',
-                      textAlign: 'center',
-                    }}
-                    title={statusText}
-                  >
-                    {receivedQty || 0}{record.unit ? ` ${record.unit}` : ''}
-                  </span>
-                );
-              },
-            },
-
-            { title: 'Unit', dataIndex: 'unit', key: 'unit', render: (unit) => unit || 'N/A' },
-            { title: 'Price', dataIndex: 'price', key: 'price', render: (price) => `₹${price.toFixed(2)}` },
-            { title: 'Total', dataIndex: 'productTotal', key: 'productTotal', render: (total) => `₹${total.toFixed(2)}` },
-          ]}
-          pagination={false}
-          rowKey="_id"
-        />
-        <p><strong>Subtotal:</strong> ₹{selectedOrder.subtotal.toFixed(2)}</p>
-        <p><strong>Total GST:</strong> ₹{selectedOrder.totalGST.toFixed(2)}</p>
-        <p><strong>Grand Total:</strong> ₹{selectedOrder.totalWithGST.toFixed(2)}</p>
-      </div>
-    );
-  };
 
   const cardSize = getCardSize();
   const gutter = 16;
@@ -1478,6 +1048,17 @@ const BillingPage = ({ branchId }) => {
                 {isPortrait || isMobile ? null : "Account"}
               </Button>
               <Button
+                type={activeTab === "billing" ? "primary" : "text"}
+                onClick={() => handleTabChange("billing")}
+                style={{
+                  fontSize: "16px",
+                  color: "#FFFFFF",
+                  padding: "0 10px",
+                }}
+              >
+                {isPortrait || isMobile ? null : "Billing"}
+              </Button>
+              <Button
                 type={activeTab === "stock" ? "primary" : "text"}
                 onClick={() => handleTabChange("stock")}
                 style={{
@@ -1498,17 +1079,6 @@ const BillingPage = ({ branchId }) => {
                 }}
               >
                 {isPortrait || isMobile ? null : "Live Order"}
-              </Button>
-              <Button
-                type="text"
-                onClick={handleOrderModalOpen}
-                style={{
-                  fontSize: "16px",
-                  color: "#FFFFFF",
-                  padding: "0 10px",
-                }}
-              >
-                {isPortrait || isMobile ? null : "View Orders"}
               </Button>
             </Space>
           </div>
@@ -1553,27 +1123,6 @@ const BillingPage = ({ branchId }) => {
             }}
           >
             <Space align="center">
-              <Button
-                type={selectedProductType === null ? "primary" : "text"}
-                onClick={() => handleProductTypeFilter(null)}
-                style={{ color: '#FFFFFF', marginRight: '10px' }}
-              >
-                All
-              </Button>
-              <Button
-                type={selectedProductType === 'cake' ? "primary" : "text"}
-                onClick={() => handleProductTypeFilter('cake')}
-                style={{ color: '#FFFFFF', marginRight: '10px' }}
-              >
-                Cake
-              </Button>
-              <Button
-                type={selectedProductType === 'non-cake' ? "primary" : "text"}
-                onClick={() => handleProductTypeFilter('non-cake')}
-                style={{ color: '#FFFFFF', marginRight: '10px' }}
-              >
-                Non-Cake
-              </Button>
               <Badge count={selectedProducts.length} showZero>
                 <Button
                   type="text"
@@ -1647,46 +1196,6 @@ const BillingPage = ({ branchId }) => {
               </Button>
               <Button
                 type="text"
-                onClick={() => {
-                  handleOrderModalOpen();
-                  toggleMobileMenu();
-                }}
-                style={{ width: "100%", textAlign: "left", color: "#000000" }}
-              >
-                View Orders
-              </Button>
-              <Button
-                type={selectedProductType === null ? "primary" : "text"}
-                onClick={() => {
-                  handleProductTypeFilter(null);
-                  toggleMobileMenu();
-                }}
-                style={{ width: "100%", textAlign: "left", color: selectedProductType === null ? "#FFFFFF" : "#000000" }}
-              >
-                All
-              </Button>
-              <Button
-                type={selectedProductType === 'cake' ? "primary" : "text"}
-                onClick={() => {
-                  handleProductTypeFilter('cake');
-                  toggleMobileMenu();
-                }}
-                style={{ width: "100%", textAlign: "left", color: selectedProductType === 'cake' ? "#FFFFFF" : "#000000" }}
-              >
-                Cake
-              </Button>
-              <Button
-                type={selectedProductType === 'non-cake' ? "primary" : "text"}
-                onClick={() => {
-                  handleProductTypeFilter('non-cake');
-                  toggleMobileMenu();
-                }}
-                style={{ width: "100%", textAlign: "left", color: selectedProductType === 'non-cake' ? "#FFFFFF" : "#000000" }}
-              >
-                Non-Cake
-              </Button>
-              <Button
-                type="text"
                 icon={<LogoutOutlined />}
                 onClick={() => {
                   handleLogout();
@@ -1704,7 +1213,6 @@ const BillingPage = ({ branchId }) => {
           </div>
         )}
       </Header>
-
       <Layout style={{ flex: 1, marginTop: '64px' }}>
         <Content
           ref={contentRef}
@@ -1826,7 +1334,6 @@ const BillingPage = ({ branchId }) => {
             )}
           </div>
         </Content>
-
         <Sider
           collapsed={!isCartExpanded}
           width={400}
@@ -1859,98 +1366,6 @@ const BillingPage = ({ branchId }) => {
           />
         </Sider>
       </Layout>
-
-      {/* Order List Modal */}
-      <Modal
-        title="Order List"
-        visible={isOrderModalVisible}
-        onCancel={handleOrderModalClose}
-        footer={null}
-        width={800}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Radio.Group
-            value={orderListTab}
-            onChange={handleOrderListTabChange}
-            style={{ marginBottom: 16 }}
-          >
-            <Radio.Button value="stock">Stock Orders</Radio.Button>
-            <Radio.Button value="liveOrder">Live Orders</Radio.Button>
-          </Radio.Group>
-          <Space style={{ marginBottom: 16 }}>
-            <Select
-              value={statusFilter}
-              onChange={handleStatusFilterChange}
-              placeholder="Filter by Status"
-              allowClear
-              style={{ width: 200 }}
-            >
-              <Option value="draft">Draft</Option>
-              <Option value="completed">Completed</Option>
-              <Option value="pending">Pending</Option>
-              <Option value="delivered">Delivered</Option>
-              <Option value="received">Received</Option>
-              <Option value="neworder">New Order</Option>
-            </Select>
-            <RangePicker
-              value={dateFilter}
-              onChange={handleDateFilterChange}
-              format="DD-MM-YYYY"
-            />
-          </Space>
-          <Table
-            columns={orderColumns}
-            dataSource={orders}
-            loading={orderLoading}
-            rowKey="_id"
-            pagination={{ pageSize: 10 }}
-          />
-        </Space>
-      </Modal>
-
-      {/* Order Details Modal */}
-      <Modal
-        title="Order Details"
-        visible={!!selectedOrder}
-        onCancel={() => setSelectedOrder(null)}
-        footer={null}
-        width={600}
-      >
-        {renderOrderDetails()}
-      </Modal>
-
-      {/* Edit Order Modal */}
-      <Modal
-        title="Edit Order"
-        visible={isEditModalVisible}
-        onCancel={() => setIsEditModalVisible(false)}
-        footer={[
-          <Button key="cancel" onClick={() => setIsEditModalVisible(false)}>
-            Cancel
-          </Button>,
-          <Button key="save" type="primary" onClick={handleSaveEdit}>
-            Save
-          </Button>,
-        ]}
-        width={900}  // Increased width
-        scroll={{ x: 900 }}  // Horizontal scroll if overflow
-      >
-        {editingOrder && (
-          <div>
-            <p><strong>Bill No:</strong> {editingOrder.billNo}</p>
-            <p><strong>Status:</strong> {editingOrder.status.charAt(0).toUpperCase() + editingOrder.status.slice(1)}</p>
-            <Table
-              dataSource={editingOrder.products}
-              columns={editColumns}
-              pagination={false}
-              rowKey="_id"
-              bordered
-              scroll={{ x: 900 }}  // Prevents horizontal overflow
-            />
-          </div>
-        )}
-      </Modal>
-
       <style jsx global>{`
         .no-arrows::-webkit-inner-spin-button,
         .no-arrows::-webkit-outer-spin-button {
@@ -1970,7 +1385,6 @@ const BillingPage = ({ branchId }) => {
     const count = selectedProduct ? selectedProduct.count : 0;
     const unit = product.priceDetails?.[selectedUnitIndex]?.unit || '';
     const isKg = unit.toLowerCase().includes('kg');
-
     return (
       <div style={{ position: 'relative' }}>
         <div
@@ -2136,7 +1550,6 @@ const BillingPage = ({ branchId }) => {
 export async function getServerSideProps(context) {
   const { params } = context;
   const { branchId } = params;
-
   return {
     props: {
       branchId,
