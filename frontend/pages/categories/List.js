@@ -8,26 +8,18 @@ const { Option } = Select;
 const CategoryListPage = () => {
   const [categories, setCategories] = useState([]);
   const [filteredCategories, setFilteredCategories] = useState([]);
-  const [departments, setDepartments] = useState([]);
+  const [departments, setDepartments] = useState([]); // State for departments
   const [loading, setLoading] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [fileList, setFileList] = useState([]);
   const [previewImage, setPreviewImage] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all');
-  const [departmentFilter, setDepartmentFilter] = useState('all'); // Changed to string for single-select
+  const [departmentFilter, setDepartmentFilter] = useState('all'); // State for department filter
   const [form] = Form.useForm();
   const router = useRouter();
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5001';
-
-  // Helper to get image src: use full URL if it's a Blob URL (starts with http), else prefix for legacy local paths
-  const getImageSrc = (imagePath) => {
-    if (imagePath && imagePath.startsWith('http')) {
-      return imagePath; // Direct Blob URL
-    }
-    return imagePath ? `${BACKEND_URL}/${imagePath}` : null;
-  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -48,7 +40,6 @@ const CategoryListPage = () => {
       });
       const data = await response.json();
       if (response.ok) {
-        console.log('Fetched categories:', data);
         setCategories(data);
         applyFilter(data, departmentFilter, typeFilter);
       } else {
@@ -60,6 +51,7 @@ const CategoryListPage = () => {
     setLoading(false);
   };
 
+  // Fetch departments
   const fetchDepartments = async (token) => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/departments/list-departments`, {
@@ -79,13 +71,12 @@ const CategoryListPage = () => {
   const applyFilter = (data, deptFilter, typeFilterValue) => {
     let filtered = data;
 
+    // Filter by department
     if (deptFilter !== 'all') {
-      filtered = filtered.filter(category => 
-        Array.isArray(category.departments) && 
-        category.departments.some(dept => dept._id === deptFilter)
-      );
+      filtered = filtered.filter(category => category.department?._id === deptFilter);
     }
 
+    // Filter by type
     if (typeFilterValue === 'pastry') {
       filtered = filtered.filter(category => category.isPastryProduct);
     } else if (typeFilterValue === 'cake') {
@@ -112,19 +103,18 @@ const CategoryListPage = () => {
     form.setFieldsValue({
       name: category.name,
       parent: category.parent?._id || null,
-      departments: Array.isArray(category.departments) ? category.departments.map(dept => dept._id) : [],
+      department: category.department?._id || null, // New: Pre-fill department
       isPastryProduct: category.isPastryProduct || false,
       isCake: category.isCake || false,
       isBiling: category.isBiling || false,
     });
-    const imageSrc = getImageSrc(category.image);
     setFileList(category.image ? [{
       uid: '-1',
       name: category.image.split('/').pop(),
       status: 'done',
-      url: imageSrc,
+      url: `${BACKEND_URL}/${category.image}`,
     }] : []);
-    setPreviewImage(imageSrc);
+    setPreviewImage(category.image ? `${BACKEND_URL}/${category.image}` : null);
     setEditVisible(true);
   };
 
@@ -151,9 +141,7 @@ const CategoryListPage = () => {
     setLoading(true);
     const formData = new FormData();
     formData.append('name', values.name);
-    if (values.departments && values.departments.length > 0) {
-      formData.append('departments', JSON.stringify(values.departments));
-    }
+    formData.append('department', values.department || 'null'); // New: Append department
     formData.append('parent', values.parent || 'null');
     formData.append('isPastryProduct', values.isPastryProduct || false);
     formData.append('isCake', values.isCake || false);
@@ -203,32 +191,6 @@ const CategoryListPage = () => {
     showUploadList: false,
   };
 
-  const dropdownRender = (menu) => (
-    <div style={{ padding: '8px' }}>
-      {departments.length > 0 ? (
-        departments.map(dept => (
-          <div key={dept._id} style={{ marginBottom: '8px' }}>
-            <Checkbox
-              value={dept._id}
-              checked={form.getFieldValue('departments')?.includes(dept._id)}
-              onChange={(e) => {
-                const currentValues = form.getFieldValue('departments') || [];
-                const newValues = e.target.checked
-                  ? [...currentValues, dept._id]
-                  : currentValues.filter(id => id !== dept._id);
-                form.setFieldsValue({ departments: newValues });
-              }}
-            >
-              {dept.name}
-            </Checkbox>
-          </div>
-        ))
-      ) : (
-        <div>No departments available</div>
-      )}
-    </div>
-  );
-
   const columns = [
     { 
       title: 'Serial No', 
@@ -254,26 +216,19 @@ const CategoryListPage = () => {
         return types.length > 0 ? types.join(', ') : 'None';
       },
     },
-    {
-      title: 'Departments',
-      key: 'departments',
-      render: (_, record) => {
-        const deptNames = Array.isArray(record.departments) 
-          ? record.departments.map(dept => dept.name).filter(name => name)
-          : [];
-        return deptNames.length > 0 ? deptNames.join(', ') : 'None';
-      },
+    { 
+      title: 'Department',
+      dataIndex: ['department', 'name'],
+      key: 'department',
+      render: (text) => text || 'None'
     },
     {
       title: 'Image',
       dataIndex: 'image',
       key: 'image',
-      render: (image) => {
-        const imageSrc = getImageSrc(image);
-        return imageSrc ? (
-          <img src={imageSrc} alt="Category" style={{ maxWidth: '50px', maxHeight: '50px' }} />
-        ) : 'No Image';
-      },
+      render: (image) => image ? (
+        <img src={`${BACKEND_URL}/${image}`} alt="Category" style={{ maxWidth: '50px', maxHeight: '50px' }} />
+      ) : 'No Image',
     },
     {
       title: 'Actions',
@@ -347,23 +302,21 @@ const CategoryListPage = () => {
           >
             <Input placeholder="e.g., Pastries" />
           </Form.Item>
+          {/* New: Department Dropdown in Edit Modal */}
           <Form.Item
-            label="Departments"
-            name="departments"
+            label="Department"
+            name="department"
             rules={[{ required: false }]}
           >
-            <Select
-              mode="multiple"
-              placeholder="Select departments"
-              allowClear
-              dropdownRender={dropdownRender}
-              style={{ width: '100%' }}
-            >
-              {departments.map(dept => (
-                <Option key={dept._id} value={dept._id} disabled>
-                  {dept.name}
-                </Option>
-              ))}
+            <Select placeholder="Select a department" allowClear>
+              <Option key="none" value={null}>None</Option>
+              {departments.length > 0 ? (
+                departments.map(dept => (
+                  <Option key={dept._id} value={dept._id}>{dept.name}</Option>
+                ))
+              ) : (
+                <Option disabled>No departments available</Option>
+              )}
             </Select>
           </Form.Item>
           <Row gutter={16}>

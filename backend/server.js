@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const morgan = require('morgan');
 const cron = require('node-cron');
+const Redis = require('ioredis'); // Add ioredis
 const { updateStockOrderStatus } = require('./controllers/orderController');
 
 require('dotenv').config();
@@ -32,13 +33,43 @@ const departmentRoutes = require('./routes/departmentRoutes');
 
 const app = express();
 
+// Initialize Redis client
+const redis = new Redis({
+  host: 'redis-11930.c264.ap-south-1-1.ec2.redns.redis-cloud.com',
+  port: 11930,
+  username: 'default',
+  password: 'onIhpfJATpc4n2C0AgAmxiLEiLEZHozy',
+  maxRetriesPerRequest: 20,
+  retryStrategy: (times) => Math.min(times * 50, 2000),
+  reconnectOnError: (err) => {
+    console.error('Redis connection error:', err);
+    return true;
+  },
+  connectionName: 'product-cache',
+  max: 10, // Connection pool max
+  min: 2,  // Connection pool min
+});
+
+redis.on('connect', () => console.log('✅ Connected to Redis'));
+redis.on('error', (err) => console.error('❌ Redis Connection Error:', err));
+
+// Make Redis client available globally
+app.set('redis', redis);
+
+// Ensure the uploads/products directory exists
+const uploadDir = path.join(__dirname, 'uploads/products');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log('Upload directory created:', uploadDir);
+}
+
 // Middleware
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
-// Serve static files from the uploads directory (lowercase, as you updated)
+// Serve static files from the uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes

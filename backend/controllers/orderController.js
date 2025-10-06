@@ -204,7 +204,6 @@ const getAllOrders = async (req, res) => {
 
     const orders = await Order.find(query)
       .sort({ createdAt: -1 })
-      .limit(500)
       .populate('branchId', 'name')
       .populate('waiterId', 'name')
       .populate('tableId', 'tableNo');

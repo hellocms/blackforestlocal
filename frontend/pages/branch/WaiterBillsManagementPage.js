@@ -25,7 +25,7 @@ const WaiterBillsManagementPage = ({ branchId }) => {
   const [branchFilter, setBranchFilter] = useState("All");
   const [waiterFilter, setWaiterFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("Today");
-  const [customDateRange, setCustomDateRange] = useState([dayjs(), dayjs()]);
+  const [customDateRange, setCustomDateRange] = useState([dayjs().startOf("day"), dayjs().endOf("day")]);
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState("summary");
   const [branchModalVisible, setBranchModalVisible] = useState(false);
@@ -35,6 +35,30 @@ const WaiterBillsManagementPage = ({ branchId }) => {
   const [sortByAmount, setSortByAmount] = useState(false);
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5001";
+
+  const computeDateRange = () => {
+    let start, end;
+    if (dateFilter === "Today") {
+      start = dayjs().startOf("day");
+      end = dayjs().endOf("day");
+    } else if (dateFilter === "Yesterday") {
+      start = dayjs().subtract(1, "day").startOf("day");
+      end = dayjs().subtract(1, "day").endOf("day");
+    } else if (dateFilter === "Last 7 Days") {
+      start = dayjs().subtract(6, "day").startOf("day");
+      end = dayjs().endOf("day");
+    } else if (dateFilter === "Last 30 Days") {
+      start = dayjs().subtract(29, "day").startOf("day");
+      end = dayjs().endOf("day");
+    } else if (dateFilter === "Till Now") {
+      start = dayjs().startOf("month");
+      end = dayjs().endOf("day");
+    } else if (dateFilter === "Custom Date" && customDateRange[0]) {
+      start = customDateRange[0].startOf("minute");
+      end = customDateRange[1] ? customDateRange[1].endOf("minute") : customDateRange[0].endOf("minute");
+    }
+    return [start ? start.toISOString() : null, end ? end.toISOString() : null];
+  };
 
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
@@ -57,28 +81,62 @@ const WaiterBillsManagementPage = ({ branchId }) => {
       router.push("/login");
       return;
     }
-
-    fetchOrders(storedToken);
-    fetchBranches(storedToken);
   }, [router]);
 
-  const fetchOrders = async (token) => {
+  useEffect(() => {
+    if (!token) return;
+
+    const fetchBranchesAsync = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/branches`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setBranches(data);
+        } else {
+          message.error("Failed to fetch branches");
+        }
+      } catch (error) {
+        message.error("Error fetching branches");
+        console.error(error);
+      }
+    };
+
+    fetchBranchesAsync();
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const dateRange = computeDateRange();
+    const currentBranchId = branchFilter !== "All" ? branchFilter : (branchId || undefined);
+    fetchOrders(token, currentBranchId, dateRange[0], dateRange[1]);
+  }, [token, branchFilter, dateFilter, customDateRange, branchId]);
+
+  const fetchOrders = async (token, branchIdParam, startDate, endDate) => {
     setLoading(true);
     try {
-      const url = branchId
-        ? `${BACKEND_URL}/api/orders?branchId=${branchId}&tab=billing`
-        : `${BACKEND_URL}/api/orders?tab=billing`;
+      let params = new URLSearchParams({ tab: "billing" });
+      if (branchIdParam) params.append("branchId", branchIdParam);
+      if (startDate) params.append("startDate", startDate);
+      if (endDate) params.append("endDate", endDate);
+      const url = `${BACKEND_URL}/api/orders?${params.toString()}`;
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
       if (response.ok) {
         setOrders(data);
-        setFilteredOrders(data);
-        const uniqueWaiters = [...new Set(data
-          .filter(o => o.waiterId && o.waiterId._id && o.waiterId.name)
-          .map(o => JSON.stringify({ _id: o.waiterId._id, name: o.waiterId.name })))
-        ].map(str => JSON.parse(str)).sort((a, b) => a.name.localeCompare(b.name));
+        const uniqueWaiters = [
+          ...new Set(
+            data
+              .filter((o) => o.waiterId && o.waiterId._id && o.waiterId.name)
+              .map((o) => JSON.stringify({ _id: o.waiterId._id, name: o.waiterId.name }))
+          ),
+        ]
+          .map((str) => JSON.parse(str))
+          .sort((a, b) => a.name.localeCompare(b.name));
         setWaiters(uniqueWaiters);
         setFilteredWaiters(uniqueWaiters);
       } else {
@@ -89,23 +147,6 @@ const WaiterBillsManagementPage = ({ branchId }) => {
       console.error(error);
     }
     setLoading(false);
-  };
-
-  const fetchBranches = async (token) => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/branches`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setBranches(data);
-      } else {
-        message.error("Failed to fetch branches");
-      }
-    } catch (error) {
-      message.error("Error fetching branches");
-      console.error(error);
-    }
   };
 
   const fetchAssignment = async (branchId, date) => {
@@ -130,10 +171,10 @@ const WaiterBillsManagementPage = ({ branchId }) => {
   const handlePrint = () => {
     const data = viewMode === "summary" ? getSummaryData() : getDetailedData();
     const title = viewMode === "summary" ? "Waiter Bills Summary" : "Waiter Bills Detailed";
-    const branchTitle = branchFilter === "All" ? "All Branches" : branches.find(b => b._id === branchFilter)?.name || branchFilter;
-    const waiterTitle = waiterFilter === "All" ? "All Waiters" : waiters.find(w => w._id === waiterFilter)?.name || waiterFilter;
+    const branchTitle = branchFilter === "All" ? "All Branches" : branches.find((b) => b._id === branchFilter)?.name || branchFilter;
+    const waiterTitle = waiterFilter === "All" ? "All Waiters" : waiters.find((w) => w._id === waiterFilter)?.name || waiterFilter;
     const currentDate = dayjs().tz("Asia/Kolkata").format("DD/MM/YYYY HH:mm:ss");
-  
+
     const printWindow = window.open("", "_blank");
     printWindow.document.write(`
       <html>
@@ -176,7 +217,7 @@ const WaiterBillsManagementPage = ({ branchId }) => {
               </tr>
             </thead>
             <tbody>
-              ${data.map(item => `
+              ${data.map((item) => `
                 <tr>
                   <td>${item.sno}</td>
                   <td>${item.waiterName}</td>
@@ -208,7 +249,7 @@ const WaiterBillsManagementPage = ({ branchId }) => {
     setBranchFilter("All");
     setWaiterFilter("All");
     setDateFilter("Today");
-    setCustomDateRange([dayjs(), dayjs()]);
+    setCustomDateRange([dayjs().startOf("day"), dayjs().endOf("day")]);
     setSortByAmount(false);
     message.success("Filters cleared");
   };
@@ -241,99 +282,13 @@ const WaiterBillsManagementPage = ({ branchId }) => {
   useEffect(() => {
     let filtered = [...orders];
 
-    if (branchFilter !== "All") {
-      filtered = filtered.filter((order) => order.branchId?._id === branchFilter);
-    }
-
     if (waiterFilter !== "All") {
       filtered = filtered.filter((order) => order.waiterId?._id === waiterFilter);
     }
 
-    let dateRange = [null, null];
-    if (dateFilter === "Today") {
-      dateRange = [dayjs().startOf("day"), dayjs().endOf("day")];
-    } else if (dateFilter === "Yesterday") {
-      dateRange = [dayjs().subtract(1, "day").startOf("day"), dayjs().subtract(1, "day").endOf("day")];
-    } else if (dateFilter === "Last 7 Days") {
-      dateRange = [dayjs().subtract(6, "day").startOf("day"), dayjs().endOf("day")];
-    } else if (dateFilter === "Last 30 Days") {
-      dateRange = [dayjs().subtract(29, "day").startOf("day"), dayjs().endOf("day")];
-    } else if (dateFilter === "Till Now") {
-      dateRange = [dayjs().startOf("month"), dayjs().endOf("day")];
-    } else if (dateFilter === "Custom Date" && customDateRange[0]) {
-      dateRange = [
-        customDateRange[0].startOf("minute"),
-        customDateRange[1] ? customDateRange[1].endOf("minute") : customDateRange[0].endOf("minute")
-      ];
-    }
-
-    if (dateRange[0]) {
-      const startDate = dateRange[0];
-      const endDate = dateRange[1];
-
-      filtered = filtered.filter((order) => {
-        const createdDate = order.createdAt ? dayjs(order.createdAt) : null;
-        return (
-          createdDate &&
-          !createdDate.isBefore(startDate) &&
-          (!endDate || !createdDate.isAfter(endDate))
-        );
-      });
-    }
-
     filtered.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     setFilteredOrders(filtered);
-    setFilteredWaiters(getFilteredWaiters());
-  }, [branchFilter, waiterFilter, dateFilter, customDateRange, orders]);
-
-  const getFilteredWaiters = () => {
-    let filtered = filteredOrders;
-
-    let dateRange = [null, null];
-    if (dateFilter === "Today") {
-      dateRange = [dayjs().startOf("day"), dayjs().endOf("day")];
-    } else if (dateFilter === "Yesterday") {
-      dateRange = [dayjs().subtract(1, "day").startOf("day"), dayjs().subtract(1, "day").endOf("day")];
-    } else if (dateFilter === "Last 7 Days") {
-      dateRange = [dayjs().subtract(6, "day").startOf("day"), dayjs().endOf("day")];
-    } else if (dateFilter === "Last 30 Days") {
-      dateRange = [dayjs().subtract(29, "day").startOf("day"), dayjs().endOf("day")];
-    } else if (dateFilter === "Till Now") {
-      dateRange = [dayjs().startOf("month"), dayjs().endOf("day")];
-    } else if (dateFilter === "Custom Date" && customDateRange[0]) {
-      dateRange = [
-        customDateRange[0].startOf("minute"),
-        customDateRange[1] ? customDateRange[1].endOf("minute") : customDateRange[0].endOf("minute")
-      ];
-    }
-
-    if (dateRange[0]) {
-      const startDate = dateRange[0];
-      const endDate = dateRange[1];
-      filtered = filtered.filter((order) => {
-        const createdDate = order.createdAt ? dayjs(order.createdAt) : null;
-        return (
-          createdDate &&
-          !createdDate.isBefore(startDate) &&
-          (!endDate || !createdDate.isAfter(endDate))
-        );
-      });
-    }
-
-    if (branchFilter === "All") {
-      const uniqueWaiters = [...new Set(filtered
-        .filter(o => o.waiterId && o.waiterId._id && o.waiterId.name)
-        .map(o => JSON.stringify({ _id: o.waiterId._id, name: o.waiterId.name })))
-      ].map(str => JSON.parse(str)).sort((a, b) => a.name.localeCompare(b.name));
-      return uniqueWaiters;
-    }
-
-    const uniqueWaiters = [...new Set(filtered
-      .filter(o => o.branchId?._id === branchFilter && o.waiterId && o.waiterId._id && o.waiterId.name)
-      .map(o => JSON.stringify({ _id: o.waiterId._id, name: o.waiterId.name })))
-    ].map(str => JSON.parse(str)).sort((a, b) => a.name.localeCompare(b.name));
-    return uniqueWaiters;
-  };
+  }, [waiterFilter, orders]);
 
   const getSummaryData = () => {
     const waiterMap = {};
@@ -603,7 +558,7 @@ const WaiterBillsManagementPage = ({ branchId }) => {
                 format="DD/MM/YYYY HH:mm"
                 value={customDateRange}
                 onChange={(dates) => {
-                  setCustomDateRange(dates || [dayjs(), dayjs()]);
+                  setCustomDateRange(dates || [dayjs().startOf("day"), dayjs().endOf("day")]);
                   setDateFilter("Custom Date");
                   setWaiterFilter("All");
                 }}
