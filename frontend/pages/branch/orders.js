@@ -6,12 +6,15 @@ import { EditOutlined, EyeOutlined, PrinterOutlined, CheckCircleFilled, EyeFille
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
-const OrderListPage = ({ branchId }) => {
+
+const OrderListPage = ({ branchId: propBranchId }) => {
   const router = useRouter();
   const [token, setToken] = useState(null);
   const [orders, setOrders] = useState([]);
@@ -20,16 +23,17 @@ const OrderListPage = ({ branchId }) => {
   const [products, setProducts] = useState([]);
   const [productCatalog, setProductCatalog] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [departments, setDepartments] = useState([]); // New: State for departments
+  const [departments, setDepartments] = useState([]);
   const [activeTab, setActiveTab] = useState("stock");
   const [searchQuery, setSearchQuery] = useState("");
   const [branchFilter, setBranchFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [productFilter, setProductFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
-  const [departmentFilter, setDepartmentFilter] = useState("All"); // New: State for department filter
-  const [kotFilterType, setKotFilterType] = useState("Department"); // New: KOT filter type
-  const [dateRange, setDateRange] = useState([null, null]);
+  const [departmentFilter, setDepartmentFilter] = useState("All");
+  const [kotFilterType, setKotFilterType] = useState("Department");
+  const [dateFilter, setDateFilter] = useState("Today");
+  const [customDateRange, setCustomDateRange] = useState([dayjs().startOf("day"), dayjs().endOf("day")]);
   const [dateFilterMode, setDateFilterMode] = useState("created");
   const [loading, setLoading] = useState(false);
   const [previewModalVisible, setPreviewModalVisible] = useState(false);
@@ -38,85 +42,39 @@ const OrderListPage = ({ branchId }) => {
   const [visibleModal, setVisibleModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [kotData, setKotData] = useState(null);
-  const handleClearFilters = () => {
-    setSearchQuery("");
-    setBranchFilter("All");
-    setStatusFilter("All");
-    setProductFilter("All");
-    setCategoryFilter("All");
-    setDepartmentFilter("All"); // New: Reset department filter
-    setDateRange([null, null]);
-    setDateFilterMode("created");
-    setKotFilterType("Department");
-    message.success("Filters cleared");
-  };
-  const getDateRangeAndOrderIds = () => {
-    if (filteredOrders.length === 0) {
-      return { earliestCreated: null, latestDelivery: null, orderIds: "" };
+
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5001";
+
+  const computeDateRange = () => {
+    let start, end;
+    if (dateFilter === "Today") {
+      start = dayjs().startOf("day");
+      end = dayjs().endOf("day");
+    } else if (dateFilter === "Yesterday") {
+      start = dayjs().subtract(1, "day").startOf("day");
+      end = dayjs().subtract(1, "day").endOf("day");
+    } else if (dateFilter === "Last 7 Days") {
+      start = dayjs().subtract(6, "day").startOf("day");
+      end = dayjs().endOf("day");
+    } else if (dateFilter === "Till Now") {
+      start = dayjs().startOf("month");
+      end = dayjs().endOf("day");
+    } else if (dateFilter === "Custom Date" && customDateRange[0]) {
+      start = customDateRange[0].startOf("day");
+      end = customDateRange[1] ? customDateRange[1].endOf("day") : customDateRange[0].endOf("day");
     }
- 
-    const createdDates = filteredOrders
-      .map((order) => order.createdAt ? dayjs(order.createdAt) : null)
-      .filter(Boolean);
-    const deliveryDates = filteredOrders
-      .map((order) => order.deliveryDateTime ? dayjs(order.deliveryDateTime) : null)
-      .filter(Boolean);
-    const orderIds = filteredOrders.map((order) => order.billNo || "N/A").join(", ");
- 
-    const earliestCreated = createdDates.length > 0
-      ? createdDates.reduce((min, date) => (date.isBefore(min) ? date : min))
-      : null;
-    const latestDelivery = deliveryDates.length > 0
-      ? deliveryDates.reduce((max, date) => (date.isAfter(max) ? date : max))
-      : null;
- 
-    return {
-      earliestCreated: earliestCreated ? earliestCreated.format("DD/MM/YYYY") : "N/A",
-      latestDelivery: latestDelivery ? latestDelivery.format("DD/MM/YYYY") : "N/A",
-      orderIds,
-    };
+    return [start ? start.toISOString() : null, end ? end.toISOString() : null];
   };
-  const handleSendingQtyChange = async (index, value) => {
-    if (!selectedOrder) return;
- 
-    const updatedProducts = [...selectedOrder.products];
-    updatedProducts[index].sendingQty = value !== null ? value : 0;
- 
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/orders/${selectedOrder._id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ products: updatedProducts }),
-      });
- 
-      if (response.ok) {
-        setSelectedOrder({ ...selectedOrder, products: updatedProducts });
-        setOrders((prev) =>
-          prev.map((o) => (o._id === selectedOrder._id ? { ...o, products: updatedProducts } : o))
-        );
-        setFilteredOrders((prev) =>
-          prev.map((o) => (o._id === selectedOrder._id ? { ...o, products: updatedProducts } : o))
-        );
-        message.success("Sending quantity updated successfully");
-      } else {
-        message.error("Failed to update sending quantity");
-      }
-    } catch (error) {
-      message.error("Error updating sending quantity");
-      console.error(error);
-    }
-  };
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || " http://localhost:5001";
+
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
     setToken(storedToken);
+
     if (!storedToken) {
       router.replace("/login");
       return;
     }
+
     try {
       const decoded = jwtDecode(storedToken);
       const role = decoded.role;
@@ -129,26 +87,117 @@ const OrderListPage = ({ branchId }) => {
       router.replace("/login");
       return;
     }
-    fetchOrders(storedToken);
-    fetchBranches(storedToken);
-    fetchCategories(storedToken);
-    fetchProducts(storedToken);
-    fetchDepartments(storedToken); // New: Fetch departments
-  }, [router]);
-  const fetchOrders = async (token) => {
+
+    if (propBranchId) {
+      setBranchFilter(propBranchId);
+    }
+  }, [router, propBranchId]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const fetchBranchesAsync = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/branches`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setBranches(data);
+        } else {
+          message.error("Failed to fetch branches");
+        }
+      } catch (error) {
+        message.error("Error fetching branches");
+        console.error(error);
+      }
+    };
+
+    const fetchCategoriesAsync = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/categories/list-categories`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setCategories(Array.isArray(data) ? data : []);
+        } else {
+          message.error("Failed to fetch categories");
+          setCategories([]);
+        }
+      } catch (error) {
+        console.error("Error fetching categories:", error);
+        message.error("Error fetching categories");
+        setCategories([]);
+      }
+    };
+
+    const fetchProductsAsync = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/products`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setProductCatalog(data);
+        } else {
+          message.error("Failed to fetch product catalog");
+        }
+      } catch (error) {
+        console.error("Error fetching product catalog:", error);
+        message.error("Error fetching product catalog");
+      }
+    };
+
+    const fetchDepartmentsAsync = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/departments/list-departments`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setDepartments(Array.isArray(data) ? data : []);
+        } else {
+          message.error("Failed to fetch departments");
+          setDepartments([]);
+        }
+      } catch (error) {
+        console.error("Error fetching departments:", error);
+        message.error("Error fetching departments");
+        setDepartments([]);
+      }
+    };
+
+    fetchBranchesAsync();
+    fetchCategoriesAsync();
+    fetchProductsAsync();
+    fetchDepartmentsAsync();
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const dateRangeISO = computeDateRange();
+    const currentBranchId = branchFilter !== "All" ? branchFilter : (propBranchId || undefined);
+    fetchOrders(token, activeTab, currentBranchId, dateRangeISO[0], dateRangeISO[1]);
+  }, [token, activeTab, branchFilter, dateFilter, customDateRange, propBranchId]);
+
+  const fetchOrders = async (token, tabParam, branchIdParam, startDate, endDate) => {
     setLoading(true);
     try {
-      const url = branchId
-        ? `${BACKEND_URL}/api/orders?branchId=${branchId}`
-        : `${BACKEND_URL}/api/orders`;
+      let params = new URLSearchParams();
+      if (tabParam) params.append("tab", tabParam);
+      if (branchIdParam) params.append("branchId", branchIdParam);
+      if (startDate) params.append("startDate", startDate);
+      if (endDate) params.append("endDate", endDate);
+      const url = `${BACKEND_URL}/api/orders?${params.toString()}`;
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
       if (response.ok) {
         setOrders(data);
-        setFilteredOrders(data);
-        const uniqueProducts = [...new Set(data.flatMap(o => o.products.map(p => p.name)))].sort();
+        const uniqueProducts = [...new Set(data.flatMap(o => o.products ? o.products.map(p => p.name) : []))].sort();
         setProducts(uniqueProducts);
       } else {
         message.error("Failed to fetch orders");
@@ -159,75 +208,7 @@ const OrderListPage = ({ branchId }) => {
     }
     setLoading(false);
   };
-  const fetchBranches = async (token) => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/branches`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setBranches(data);
-      } else {
-        message.error("Failed to fetch branches");
-      }
-    } catch (error) {
-      message.error("Error fetching branches");
-      console.error(error);
-    }
-  };
-  const fetchCategories = async (token) => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/categories/list-categories`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setCategories(Array.isArray(data) ? data : []);
-      } else {
-        message.error("Failed to fetch categories");
-        setCategories([]);
-      }
-    } catch (error) {
-      console.error("Error fetching categories:", error);
-      message.error("Error fetching categories");
-      setCategories([]);
-    }
-  };
-  const fetchProducts = async (token) => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/products`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setProductCatalog(data);
-      } else {
-        message.error("Failed to fetch product catalog");
-      }
-    } catch (error) {
-      console.error("Error fetching product catalog:", error);
-      message.error("Error fetching product catalog");
-    }
-  };
-  // New: Fetch departments
-  const fetchDepartments = async (token) => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/departments/list-departments`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setDepartments(Array.isArray(data) ? data : []);
-      } else {
-        message.error("Failed to fetch departments");
-        setDepartments([]);
-      }
-    } catch (error) {
-      console.error("Error fetching departments:", error);
-      message.error("Error fetching departments");
-      setDepartments([]);
-    }
-  };
+
   const fetchAssignment = async (branchId, date) => {
     try {
       const formattedDate = dayjs(date).format("YYYY-MM-DD");
@@ -246,12 +227,83 @@ const OrderListPage = ({ branchId }) => {
       return {};
     }
   };
+
+  const handleClearFilters = () => {
+    setSearchQuery("");
+    setBranchFilter("All");
+    setStatusFilter("All");
+    setProductFilter("All");
+    setCategoryFilter("All");
+    setDepartmentFilter("All");
+    setDateFilter("Today");
+    setCustomDateRange([dayjs().startOf("day"), dayjs().endOf("day")]);
+    setDateFilterMode("created");
+    setKotFilterType("Department");
+    message.success("Filters cleared");
+  };
+
+  const getDateRangeAndOrderIds = () => {
+    if (filteredOrders.length === 0) {
+      return { earliestCreated: null, latestDelivery: null, orderIds: "" };
+    }
+    const createdDates = filteredOrders
+      .map((order) => order.createdAt ? dayjs(order.createdAt) : null)
+      .filter(Boolean);
+    const deliveryDates = filteredOrders
+      .map((order) => order.deliveryDateTime ? dayjs(order.deliveryDateTime) : null)
+      .filter(Boolean);
+    const orderIds = filteredOrders.map((order) => order.billNo || "N/A").join(", ");
+    const earliestCreated = createdDates.length > 0
+      ? createdDates.reduce((min, date) => (date.isBefore(min) ? date : min))
+      : null;
+    const latestDelivery = deliveryDates.length > 0
+      ? deliveryDates.reduce((max, date) => (date.isAfter(max) ? date : max))
+      : null;
+    return {
+      earliestCreated: earliestCreated ? earliestCreated.format("DD/MM/YYYY") : "N/A",
+      latestDelivery: latestDelivery ? latestDelivery.format("DD/MM/YYYY") : "N/A",
+      orderIds,
+    };
+  };
+
+  const handleSendingQtyChange = async (index, value) => {
+    if (!selectedOrder) return;
+    const updatedProducts = [...selectedOrder.products];
+    updatedProducts[index].sendingQty = value !== null ? value : 0;
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/orders/${selectedOrder._id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ products: updatedProducts }),
+      });
+      if (response.ok) {
+        setSelectedOrder({ ...selectedOrder, products: updatedProducts });
+        setOrders((prev) =>
+          prev.map((o) => (o._id === selectedOrder._id ? { ...o, products: updatedProducts } : o))
+        );
+        setFilteredOrders((prev) =>
+          prev.map((o) => (o._id === selectedOrder._id ? { ...o, products: updatedProducts } : o))
+        );
+        message.success("Sending quantity updated successfully");
+      } else {
+        message.error("Failed to update sending quantity");
+      }
+    } catch (error) {
+      message.error("Error updating sending quantity");
+      console.error(error);
+    }
+  };
+
   useEffect(() => {
     applyFilters();
-  }, [activeTab, searchQuery, branchFilter, statusFilter, productFilter, categoryFilter, departmentFilter, dateRange, dateFilterMode, orders]);
+  }, [searchQuery, statusFilter, productFilter, categoryFilter, departmentFilter, dateFilter, customDateRange, dateFilterMode, orders]);
+
   const applyFilters = () => {
     let filtered = [...orders];
-    filtered = filtered.filter((order) => order.tab === activeTab);
+
     if (searchQuery) {
       filtered = filtered.filter((order) =>
         order.billNo && typeof order.billNo === "string"
@@ -259,21 +311,19 @@ const OrderListPage = ({ branchId }) => {
           : false
       );
     }
-    if (branchFilter !== "All") {
-      filtered = filtered.filter((order) =>
-        order.branchId && order.branchId._id === branchFilter
-      );
-    }
+
     if (statusFilter !== "All") {
       filtered = filtered.filter((order) =>
         order.status && order.status.toLowerCase() === statusFilter.toLowerCase()
       );
     }
+
     if (productFilter !== "All") {
       filtered = filtered.filter((order) =>
         order.products.some((p) => p.name === productFilter)
       );
     }
+
     if (categoryFilter !== "All") {
       filtered = filtered.filter((order) =>
         order.products.some((p) => {
@@ -282,7 +332,7 @@ const OrderListPage = ({ branchId }) => {
         })
       );
     }
-    // New: Department filter
+
     if (departmentFilter !== "All") {
       filtered = filtered.filter((order) =>
         order.products.some((p) => {
@@ -292,9 +342,12 @@ const OrderListPage = ({ branchId }) => {
         })
       );
     }
-    if (dateRange[0]) {
-      const startDate = dayjs(dateRange[0]).startOf("day");
-      const endDate = dateRange[1] ? dayjs(dateRange[1]).endOf("day") : null;
+
+    const dateRangeISO = computeDateRange();
+    const startDate = dateRangeISO[0] ? dayjs(dateRangeISO[0]) : null;
+    const endDate = dateRangeISO[1] ? dayjs(dateRangeISO[1]) : null;
+
+    if (startDate) {
       filtered = filtered.filter((order) => {
         const createdDate = order.createdAt ? dayjs(order.createdAt) : null;
         const deliveryDate = order.deliveryDateTime ? dayjs(order.deliveryDateTime) : null;
@@ -302,45 +355,49 @@ const OrderListPage = ({ branchId }) => {
           return (
             createdDate &&
             !createdDate.isBefore(startDate) &&
-            (!endDate || createdDate.isBefore(endDate))
+            (!endDate || !createdDate.isAfter(endDate))
           );
         }
         if (dateFilterMode === "delivery") {
           return (
             deliveryDate &&
             !deliveryDate.isBefore(startDate) &&
-            (!endDate || deliveryDate.isBefore(endDate))
+            (!endDate || !deliveryDate.isAfter(endDate))
           );
         }
         if (dateFilterMode === "combined") {
           const createdMatch =
             createdDate &&
             !createdDate.isBefore(startDate) &&
-            (!endDate || createdDate.isBefore(endDate));
+            (!endDate || !createdDate.isAfter(endDate));
           const deliveryMatch =
             deliveryDate &&
             !deliveryDate.isBefore(startDate) &&
-            (!endDate || deliveryDate.isBefore(endDate));
+            (!endDate || !deliveryDate.isAfter(endDate));
           return createdMatch || deliveryMatch;
         }
         return false;
       });
     }
+
     filtered.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     setFilteredOrders(filtered);
   };
+
   const handleEdit = async (record) => {
     const assignment = await fetchAssignment(record.branchId._id, record.createdAt);
     setSelectedOrder({ ...record, assignment });
     setEditingOrderId(record._id);
     setIsEditMode(true);
   };
+
   const handleView = async (record) => {
     const assignment = await fetchAssignment(record.branchId._id, record.createdAt);
     setSelectedOrder({ ...record, assignment });
     setIsEditMode(false);
     setVisibleModal(true);
   };
+
   const handlePrint = async (record) => {
     const summary = {
       totalQty: record.products.reduce((sum, p) => sum + p.quantity, 0),
@@ -360,10 +417,10 @@ const OrderListPage = ({ branchId }) => {
     printReceipt(record, summary, branch, assignment);
     message.success("Receipt printed");
   };
+
   const handleConfirm = async (record) => {
     const isConfirmedState = ["completed", "delivered", "received"].includes(record.status);
     const newStatus = isConfirmedState ? "pending" : "completed";
- 
     if (newStatus === "completed") {
       const unconfirmedCount = record.products.filter(p => !p.confirmed).length;
       if (unconfirmedCount > 0) {
@@ -371,12 +428,10 @@ const OrderListPage = ({ branchId }) => {
         return;
       }
     }
- 
     if (["delivered", "received"].includes(record.status)) {
       message.warning("Order is already delivered or received; status cannot be reverted here.");
       return;
     }
- 
     try {
       const response = await fetch(`${BACKEND_URL}/api/orders/${record._id}`, {
         method: "PATCH",
@@ -403,7 +458,7 @@ const OrderListPage = ({ branchId }) => {
       console.error(error);
     }
   };
- 
+
   const handleDelivery = async (record) => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/orders/${record._id}`, {
@@ -433,7 +488,7 @@ const OrderListPage = ({ branchId }) => {
       console.error(error);
     }
   };
- 
+
   const handleReceived = async (record) => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/orders/${record._id}`, {
@@ -449,7 +504,7 @@ const OrderListPage = ({ branchId }) => {
           prev.map((o) => (o._id === record._id ? { ...o, status: "received" } : o))
         );
         setFilteredOrders((prev) =>
-          prev.map((o) => (o._id === selectedOrder._id ? { ...o, status: "received" } : o))
+          prev.map((o) => (o._id === record._id ? { ...o, status: "received" } : o))
         );
         setSelectedOrder((prev) => (prev && prev._id === record._id ? { ...prev, status: "received" } : prev));
         message.success("Order marked as received");
@@ -461,27 +516,47 @@ const OrderListPage = ({ branchId }) => {
       console.error(error);
     }
   };
+
+  const handleDelete = async (record) => {
+    if (!window.confirm(`Are you sure you want to delete order ${record.billNo || 'N/A'}?`)) {
+      return;
+    }
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/orders/${record._id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        setOrders((prev) => prev.filter((o) => o._id !== record._id));
+        setFilteredOrders((prev) => prev.filter((o) => o._id !== record._id));
+        message.success("Order deleted successfully");
+      } else {
+        message.error("Failed to delete order");
+      }
+    } catch (error) {
+      message.error("Error deleting order");
+      console.error(error);
+    }
+  };
+
   const handleToggleProductConfirm = async (productIndex) => {
     if (!selectedOrder) return;
- 
     const isOrderConfirmed = ["completed", "delivered", "received"].includes(selectedOrder.status);
     if (isOrderConfirmed) {
       message.warning("Cannot change product confirmation status when order is completed, delivered, or received.");
       return;
     }
- 
     const updatedProducts = [...selectedOrder.products];
     const currentConfirmed = updatedProducts[productIndex].confirmed || false;
     updatedProducts[productIndex].confirmed = !currentConfirmed;
     if (!currentConfirmed && (updatedProducts[productIndex].sendingQty === undefined || updatedProducts[productIndex].sendingQty === 0)) {
       updatedProducts[productIndex].sendingQty = updatedProducts[productIndex].quantity || 0;
     }
- 
     const allConfirmed = updatedProducts.every(p => p.confirmed);
     let updatedOrder = { ...selectedOrder, products: updatedProducts };
- 
     try {
-      // Update products
       let response = await fetch(`${BACKEND_URL}/api/orders/${selectedOrder._id}`, {
         method: "PATCH",
         headers: {
@@ -490,17 +565,12 @@ const OrderListPage = ({ branchId }) => {
         },
         body: JSON.stringify({ products: updatedProducts }),
       });
- 
       if (!response.ok) {
         message.error("Failed to update product confirmation");
         return;
       }
- 
-      // Fetch the updated order to ensure all fields are synced, but preserve original updatedAt
       const updatedOrderData = await response.json();
       updatedOrder = { ...updatedOrderData.order, updatedAt: selectedOrder.updatedAt };
- 
-      // If all products are confirmed, update order status to completed
       if (allConfirmed && !currentConfirmed) {
         response = await fetch(`${BACKEND_URL}/api/orders/${selectedOrder._id}`, {
           method: "PATCH",
@@ -510,7 +580,6 @@ const OrderListPage = ({ branchId }) => {
           },
           body: JSON.stringify({ status: "completed" }),
         });
- 
         if (response.ok) {
           const statusUpdateData = await response.json();
           updatedOrder = { ...updatedOrder, status: statusUpdateData.order.status, updatedAt: selectedOrder.updatedAt };
@@ -520,7 +589,6 @@ const OrderListPage = ({ branchId }) => {
           return;
         }
       }
- 
       setSelectedOrder(updatedOrder);
       setOrders((prev) =>
         prev.map((o) => (o._id === selectedOrder._id ? { ...o, ...updatedOrder } : o))
@@ -534,6 +602,7 @@ const OrderListPage = ({ branchId }) => {
       console.error(error);
     }
   };
+
   const getKOTData = () => {
     const isAllBranches = branchFilter === "All";
     if (kotFilterType === "Branch") {
@@ -599,7 +668,7 @@ const OrderListPage = ({ branchId }) => {
           : Object.keys(cat.products || {}).length > 0
       );
       return { type: "Branch", categories: categoriesData, isAllBranches, hasData };
-    } else { // "Department"
+    } else {
       const deptMap = {};
       filteredOrders.forEach((order) => {
         order.products
@@ -655,6 +724,7 @@ const OrderListPage = ({ branchId }) => {
       return { type: "Department", departments: departmentsData, hasData };
     }
   };
+
   const handlePreview = async () => {
     const kotResult = getKOTData();
     if (!kotResult.hasData) {
@@ -675,6 +745,7 @@ const OrderListPage = ({ branchId }) => {
     setFilteredOrders(updatedOrders);
     setPreviewModalVisible(true);
   };
+
   const handlePrintCombined = () => {
     const kotResult = getKOTData();
     if (!kotResult.hasData) {
@@ -833,7 +904,7 @@ const OrderListPage = ({ branchId }) => {
           </body>
         </html>
       `);
-    } else { // Department
+    } else {
       printWindow.document.write(`
         <html>
           <head>
@@ -928,6 +999,7 @@ const OrderListPage = ({ branchId }) => {
     printWindow.print();
     printWindow.close();
   };
+
   const columns = [
     { title: "Serial No", render: (_, __, index) => index + 1, width: 80 },
     {
@@ -997,11 +1069,17 @@ const OrderListPage = ({ branchId }) => {
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
           <Button icon={<EyeOutlined />} onClick={() => handleView(record)} />
           <Button icon={<PrinterOutlined />} onClick={() => handlePrint(record)} />
+          <Button 
+            icon={<CloseCircleFilled style={{ color: 'red' }} />} 
+            onClick={() => handleDelete(record)} 
+            danger
+          />
         </Space>
       ),
-      width: 150,
+      width: 180, // Increased width to accommodate new button
     },
   ];
+
   const printReceipt = (order, summary, branch, assignment) => {
     const {
       totalQty,
@@ -1017,7 +1095,7 @@ const OrderListPage = ({ branchId }) => {
       balance,
     } = summary;
     const printWindow = window.open("", "_blank");
-   
+
     const createdDate = order.createdAt
       ? dayjs(order.createdAt).tz("Asia/Kolkata").format("DD/MM/YYYY")
       : "N/A";
@@ -1109,6 +1187,7 @@ const OrderListPage = ({ branchId }) => {
     printWindow.print();
     printWindow.close();
   };
+
   const editModalColumns = [
     {
       title: "Product Name",
@@ -1216,6 +1295,7 @@ const OrderListPage = ({ branchId }) => {
       width: 150,
     },
   ];
+
   const viewModalColumns = [
     { title: "Product", dataIndex: "name", render: (value) => value || "Unknown" },
     {
@@ -1262,6 +1342,7 @@ const OrderListPage = ({ branchId }) => {
       ),
     },
   ];
+
   const calculateTotals = (products) => {
     return {
       quantity: products.reduce((sum, p) => sum + (p.quantity || 0), 0),
@@ -1271,6 +1352,7 @@ const OrderListPage = ({ branchId }) => {
       total: products.reduce((sum, p) => sum + ((p.sendingQty || 0) * (p.price || 0)), 0),
     };
   };
+
   const modalFooter = (products) => {
     const totals = calculateTotals(products || []);
     return (
@@ -1285,6 +1367,7 @@ const OrderListPage = ({ branchId }) => {
       </tr>
     );
   };
+
   const tableSummary = () => {
     const totalItems = filteredOrders.reduce((sum, o) => sum + (o.totalItems || 0), 0);
     const totalCompleted = filteredOrders.reduce((sum, o) => sum + (o.totalItems - o.products.filter(p => !p.confirmed).length), 0);
@@ -1306,6 +1389,7 @@ const OrderListPage = ({ branchId }) => {
       </Table.Summary.Row>
     );
   };
+
   const viewModalSummary = () => {
     if (!selectedOrder || !selectedOrder.products) return null;
     const totals = calculateTotals(selectedOrder.products);
@@ -1322,6 +1406,7 @@ const OrderListPage = ({ branchId }) => {
       </Table.Summary.Row>
     );
   };
+
   const editSummary = () => {
     if (!selectedOrder || !selectedOrder.products) return null;
     const totals = calculateTotals(selectedOrder.products);
@@ -1338,6 +1423,7 @@ const OrderListPage = ({ branchId }) => {
       </Table.Summary.Row>
     );
   };
+
   const kotProductColumns = [
     {
       title: "Product Name",
@@ -1362,6 +1448,7 @@ const OrderListPage = ({ branchId }) => {
       align: "right",
     },
   ];
+
   return (
     <div style={{ padding: "20px" }}>
       <Space direction="vertical" style={{ width: "100%", marginBottom: "20px" }}>
@@ -1426,11 +1513,39 @@ const OrderListPage = ({ branchId }) => {
           </Space>
           <Space direction="vertical">
             <Text strong>Date Range:</Text>
-            <RangePicker
-              value={dateRange}
-              onChange={(dates) => setDateRange(dates || [null, null])}
-              style={{ width: 250 }}
-            />
+            <Space>
+              <Select
+                value={dateFilter}
+                onChange={(value) => {
+                  setDateFilter(value);
+                  if (value === "Today") {
+                    setCustomDateRange([dayjs().startOf("day"), dayjs().endOf("day")]);
+                  } else if (value === "Yesterday") {
+                    setCustomDateRange([dayjs().subtract(1, "day").startOf("day"), dayjs().subtract(1, "day").endOf("day")]);
+                  } else if (value === "Last 7 Days") {
+                    setCustomDateRange([dayjs().subtract(6, "day").startOf("day"), dayjs().endOf("day")]);
+                  } else if (value === "Till Now") {
+                    setCustomDateRange([dayjs().startOf("month"), dayjs().endOf("day")]);
+                  }
+                }}
+                style={{ width: 150 }}
+              >
+                <Option value="Today">Today</Option>
+                <Option value="Yesterday">Yesterday</Option>
+                <Option value="Last 7 Days">Last 7 Days</Option>
+                <Option value="Till Now">Till Now</Option>
+                <Option value="Custom Date">Custom Date</Option>
+              </Select>
+              <RangePicker
+                format="DD/MM/YYYY"
+                value={customDateRange}
+                onChange={(dates) => {
+                  setCustomDateRange(dates || [dayjs().startOf("day"), dayjs().endOf("day")]);
+                  setDateFilter("Custom Date");
+                }}
+                style={{ width: 250 }}
+              />
+            </Space>
           </Space>
           <Space direction="vertical">
             <Text strong>Date Filter Mode:</Text>
@@ -1522,6 +1637,7 @@ const OrderListPage = ({ branchId }) => {
             </Space>
           </Space>
         </Space>
+
         <Table
           columns={columns}
           dataSource={filteredOrders}
@@ -1533,6 +1649,7 @@ const OrderListPage = ({ branchId }) => {
           bordered
           size="small"
         />
+
         {editingOrderId && selectedOrder && (
           <div style={{ marginTop: 20, border: "1px solid #d9d9d9", padding: 16, position: "relative" }}>
             <Button
@@ -1645,226 +1762,299 @@ const OrderListPage = ({ branchId }) => {
             />
           </div>
         )}
-      </Space>
-      <Modal
-        title={
-          selectedOrder ? (
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <span style={{ marginRight: 16 }}>
-                Order {selectedOrder.billNo || "N/A"} - {selectedOrder.branchId?.name?.slice(0, 3).toUpperCase() || "UNK"} (
-                {selectedOrder.status || "Unknown"})
-              </span>
-              <Button
-                type="primary"
-                icon={<CheckCircleFilled />}
-                disabled={true}
-                danger={!["completed", "delivered", "received"].includes(selectedOrder.status)}
-                style={{
-                  backgroundColor: ["completed", "delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : "#ff4d4f",
-                  borderColor: ["completed", "delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : "#ff4d4f",
-                  marginRight: 8,
-                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-                  color: "#fff",
-                }}
-              >
-                {selectedOrder.status === "completed" ? "Confirmed" : "Confirm"}
-              </Button>
-              <span
-                style={{
-                  width: 20,
-                  height: 2,
-                  backgroundColor: ["delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : "#d9d9d9",
-                  marginRight: 8,
-                }}
+
+        <Modal
+          title={
+            selectedOrder ? (
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <span style={{ marginRight: 16 }}>
+                  Order {selectedOrder.billNo || "N/A"} - {selectedOrder.branchId?.name?.slice(0, 3).toUpperCase() || "UNK"} (
+                  {selectedOrder.status || "Unknown"})
+                </span>
+                <Button
+                  type="primary"
+                  icon={<CheckCircleFilled />}
+                  disabled={true}
+                  danger={!["completed", "delivered", "received"].includes(selectedOrder.status)}
+                  style={{
+                    backgroundColor: ["completed", "delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : "#ff4d4f",
+                    borderColor: ["completed", "delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : "#ff4d4f",
+                    marginRight: 8,
+                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                    color: "#fff",
+                  }}
+                >
+                  {selectedOrder.status === "completed" ? "Confirmed" : "Confirm"}
+                </Button>
+                <span
+                  style={{
+                    width: 20,
+                    height: 2,
+                    backgroundColor: ["delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : "#d9d9d9",
+                    marginRight: 8,
+                  }}
+                />
+                <Button
+                  type="primary"
+                  icon={<TruckFilled />}
+                  disabled={true}
+                  danger={!["delivered", "received"].includes(selectedOrder.status) && selectedOrder.status === "completed"}
+                  style={{
+                    backgroundColor: ["delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : (selectedOrder.status === "completed" ? "#ff4d4f" : undefined),
+                    borderColor: ["delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : (selectedOrder.status === "completed" ? "#ff4d4f" : undefined),
+                    marginRight: 8,
+                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                    color: "#fff",
+                  }}
+                >
+                  Delivery
+                </Button>
+                <span
+                  style={{
+                    width: 20,
+                    height: 2,
+                    backgroundColor: selectedOrder.status === "received" ? "#52c41a" : "#d9d9d9",
+                    marginRight: 8,
+                  }}
+                />
+                <Button
+                  type="primary"
+                  icon={<CheckSquareFilled />}
+                  disabled={true}
+                  danger={selectedOrder.status === "delivered" && selectedOrder.status !== "received"}
+                  style={{
+                    backgroundColor: selectedOrder.status === "received" ? "#52c41a" : (selectedOrder.status === "delivered" ? "#ff4d4f" : undefined),
+                    borderColor: selectedOrder.status === "received" ? "#52c41a" : (selectedOrder.status === "delivered" ? "#ff4d4f" : undefined),
+                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                    color: "#fff",
+                  }}
+                >
+                  Received
+                </Button>
+              </div>
+            ) : null
+          }
+          visible={visibleModal}
+          onCancel={() => setVisibleModal(false)}
+          footer={[
+            <Button key="close" onClick={() => setVisibleModal(false)}>
+              Close
+            </Button>,
+          ]}
+          width={1000}
+        >
+          {selectedOrder && (
+            <div>
+              <Space style={{ marginBottom: 8, fontSize: 14 }}>
+                <span>Items: {selectedOrder.totalItems || 0}</span>
+                <span>|</span>
+                <span>Amount: ₹{(selectedOrder.totalWithGST || 0).toFixed(2)}</span>
+                <span>|</span>
+                <span>
+                  Payment: {selectedOrder.paymentMethod
+                    ? selectedOrder.paymentMethod.charAt(0).toUpperCase() + selectedOrder.paymentMethod.slice(1)
+                    : "N/A"}
+                </span>
+              </Space>
+              <div style={{ marginBottom: 8, fontSize: 14 }}>
+                Order Date: {selectedOrder.createdAt ? dayjs(selectedOrder.createdAt).tz("Asia/Kolkata").format("DD/MM/YYYY, hh:mm A") : "N/A"},
+                Delivery Date: {selectedOrder.deliveryDateTime ? dayjs(selectedOrder.deliveryDateTime).tz("Asia/Kolkata").format("DD/MM/YYYY, hh:mm A") : "N/A"},
+                Last Updated: {selectedOrder.updatedAt ? dayjs(selectedOrder.updatedAt).tz("Asia/Kolkata").format("DD/MM/YYYY, hh:mm A") : "N/A"}
+              </div>
+              <Space style={{ marginBottom: 16, fontSize: 14 }}>
+                <span>Waiter: {selectedOrder.waiterId?.name || "N/A"}</span>
+                <span>|</span>
+                <span>Manager: {selectedOrder.assignment?.managerId?.name || "N/A"}</span>
+                <span>|</span>
+                <span>Cashier: {selectedOrder.assignment?.cashierId?.name || "N/A"}</span>
+              </Space>
+              <Table
+                columns={viewModalColumns}
+                dataSource={selectedOrder.products || []}
+                pagination={false}
+                rowKey={(record, index) => index}
+                footer={() => modalFooter(selectedOrder.products)}
+                bordered
+                size="small"
+                summary={viewModalSummary}
               />
-              <Button
-                type="primary"
-                icon={<TruckFilled />}
-                disabled={true}
-                danger={!["delivered", "received"].includes(selectedOrder.status) && selectedOrder.status === "completed"}
-                style={{
-                  backgroundColor: ["delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : (selectedOrder.status === "completed" ? "#ff4d4f" : undefined),
-                  borderColor: ["delivered", "received"].includes(selectedOrder.status) ? "#52c41a" : (selectedOrder.status === "completed" ? "#ff4d4f" : undefined),
-                  marginRight: 8,
-                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-                  color: "#fff",
-                }}
-              >
-                Delivery
-              </Button>
-              <span
-                style={{
-                  width: 20,
-                  height: 2,
-                  backgroundColor: selectedOrder.status === "received" ? "#52c41a" : "#d9d9d9",
-                  marginRight: 8,
-                }}
-              />
-              <Button
-                type="primary"
-                icon={<CheckSquareFilled />}
-                disabled={true}
-                danger={selectedOrder.status === "delivered" && selectedOrder.status !== "received"}
-                style={{
-                  backgroundColor: selectedOrder.status === "received" ? "#52c41a" : (selectedOrder.status === "delivered" ? "#ff4d4f" : undefined),
-                  borderColor: selectedOrder.status === "received" ? "#52c41a" : (selectedOrder.status === "delivered" ? "#ff4d4f" : undefined),
-                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-                  color: "#fff",
-                }}
-              >
-                Received
-              </Button>
             </div>
-          ) : null
-        }
-        visible={visibleModal}
-        onCancel={() => setVisibleModal(false)}
-        footer={[
-          <Button key="close" onClick={() => setVisibleModal(false)}>
-            Close
-          </Button>,
-        ]}
-        width={1000}
-      >
-        {selectedOrder && (
-          <div>
-            <Space style={{ marginBottom: 8, fontSize: 14 }}>
-              <span>Items: {selectedOrder.totalItems || 0}</span>
-              <span>|</span>
-              <span>Amount: ₹{(selectedOrder.totalWithGST || 0).toFixed(2)}</span>
-              <span>|</span>
+          )}
+        </Modal>
+
+        <Modal
+          title={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start" }}>
               <span>
-                Payment: {selectedOrder.paymentMethod
-                  ? selectedOrder.paymentMethod.charAt(0).toUpperCase() + selectedOrder.paymentMethod.slice(1)
-                  : "N/A"}
+                {kotFilterType === "Branch" ? "KOT Report" : "KOT Report by Department"} - {branchFilter === "All" ? "All Branches" : branches.find((b) => b._id === branchFilter)?.name?.split(" ").slice(0, 2).join(" ") || branchFilter} ({statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)})
               </span>
-            </Space>
-            <div style={{ marginBottom: 8, fontSize: 14 }}>
-              Order Date: {selectedOrder.createdAt ? dayjs(selectedOrder.createdAt).tz("Asia/Kolkata").format("DD/MM/YYYY, hh:mm A") : "N/A"},
-              Delivery Date: {selectedOrder.deliveryDateTime ? dayjs(selectedOrder.deliveryDateTime).tz("Asia/Kolkata").format("DD/MM/YYYY, hh:mm A") : "N/A"},
-              Last Updated: {selectedOrder.updatedAt ? dayjs(selectedOrder.updatedAt).tz("Asia/Kolkata").format("DD/MM/YYYY, hh:mm A") : "N/A"}
+              <Button
+                type="primary"
+                icon={<PrinterFilled />}
+                onClick={handlePrintCombined}
+                style={{ width: 32, height: 32, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", marginLeft: 8 }}
+              />
             </div>
-            <Space style={{ marginBottom: 16, fontSize: 14 }}>
-              <span>Waiter: {selectedOrder.waiterId?.name || "N/A"}</span>
-              <span>|</span>
-              <span>Manager: {selectedOrder.assignment?.managerId?.name || "N/A"}</span>
-              <span>|</span>
-              <span>Cashier: {selectedOrder.assignment?.cashierId?.name || "N/A"}</span>
-            </Space>
-            <Table
-              columns={viewModalColumns}
-              dataSource={selectedOrder.products || []}
-              pagination={false}
-              rowKey={(record, index) => index}
-              footer={() => modalFooter(selectedOrder.products)}
-              bordered
-              size="small"
-              summary={viewModalSummary}
-            />
+          }
+          visible={previewModalVisible}
+          onCancel={() => setPreviewModalVisible(false)}
+          closeIcon={
+            <div style={{ backgroundColor: "#ff4d4f", borderRadius: "50%", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <CloseOutlined style={{ color: "#fff", fontSize: 16 }} />
+            </div>
+          }
+          footer={[
+            <Button key="close" onClick={() => setPreviewModalVisible(false)}>
+              Close
+            </Button>,
+          ]}
+          width={800}
+        >
+          <Space direction="vertical" style={{ width: "100%", marginBottom: 16 }}>
+            <Text>
+              Department: {departmentFilter === "All" ? "All Departments" : departments.find((d) => d._id === departmentFilter)?.name || departmentFilter},
+              Category: {categoryFilter === "All" ? "All Categories" : categories.find((c) => c._id === categoryFilter)?.name || categoryFilter},
+              Product: {productFilter === "All" ? "All Products" : productFilter}
+            </Text>
+            <Text>
+              Dates: {getDateRangeAndOrderIds().earliestCreated} - {getDateRangeAndOrderIds().latestDelivery}
+            </Text>
+            <Text>
+              Waiter: {(() => {
+                const waiters = [...new Set(filteredOrders.map((order) => order.waiterId?.name).filter(Boolean))];
+                return waiters.length > 0 ? waiters.join(", ") : "N/A";
+              })()} |
+              Manager: {(() => {
+                const managers = [...new Set(filteredOrders.map((order) => order.assignment?.managerId?.name).filter(Boolean))];
+                return managers.length > 0 ? managers.join(", ") : "N/A";
+              })()} |
+              Cashier: {(() => {
+                const cashiers = [...new Set(filteredOrders.map((order) => order.assignment?.cashierId?.name).filter(Boolean))];
+                return cashiers.length > 0 ? cashiers.join(", ") : "N/A";
+              })()}
+            </Text>
+          </Space>
+          <div style={{ marginBottom: 16 }}>
+            <Text>
+              Order IDs:{" "}
+              {getDateRangeAndOrderIds().orderIds.split(", ").map((id, index) => {
+                const match = id.match(/^([A-Z]{3})(\d{2})(\d{2})(\d{4})$/);
+                if (match) {
+                  const [_, prefix, date, month, year] = match;
+                  return (
+                    <span key={index}>
+                      {prefix}<span style={{ fontWeight: 600 }}>{date}</span>{month}{year}
+                      {index < getDateRangeAndOrderIds().orderIds.split(", ").length - 1 ? ", " : ""}
+                    </span>
+                  );
+                }
+                return <span key={index}>{id}{index < getDateRangeAndOrderIds().orderIds.split(", ").length - 1 ? ", " : ""}</span>;
+              })}
+            </Text>
           </div>
-        )}
-      </Modal>
-      <Modal
-        title={
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start" }}>
-            <span>
-              {kotFilterType === "Branch" ? "KOT Report" : "KOT Report by Department"} - {branchFilter === "All" ? "All Branches" : branches.find((b) => b._id === branchFilter)?.name?.split(" ").slice(0, 2).join(" ") || branchFilter} ({statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)})
-            </span>
-            <Button
-              type="primary"
-              icon={<PrinterFilled />}
-              onClick={handlePrintCombined}
-              style={{ width: 32, height: 32, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", marginLeft: 8 }}
-            />
-          </div>
-        }
-        visible={previewModalVisible}
-        onCancel={() => setPreviewModalVisible(false)}
-        closeIcon={
-          <div style={{ backgroundColor: "#ff4d4f", borderRadius: "50%", width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <CloseOutlined style={{ color: "#fff", fontSize: 16 }} />
-          </div>
-        }
-        footer={[
-          <Button key="close" onClick={() => setPreviewModalVisible(false)}>
-            Close
-          </Button>,
-        ]}
-        width={800}
-      >
-        <Space direction="vertical" style={{ width: "100%", marginBottom: 16 }}>
-          <Text>
-            Department: {departmentFilter === "All" ? "All Departments" : departments.find((d) => d._id === departmentFilter)?.name || departmentFilter},
-            Category: {categoryFilter === "All" ? "All Categories" : categories.find((c) => c._id === categoryFilter)?.name || categoryFilter},
-            Product: {productFilter === "All" ? "All Products" : productFilter}
-          </Text>
-          <Text>
-            Dates: {getDateRangeAndOrderIds().earliestCreated} - {getDateRangeAndOrderIds().latestDelivery}
-          </Text>
-          <Text>
-            Waiter: {(() => {
-              const waiters = [...new Set(filteredOrders.map((order) => order.waiterId?.name).filter(Boolean))];
-              return waiters.length > 0 ? waiters.join(", ") : "N/A";
-            })()} |
-            Manager: {(() => {
-              const managers = [...new Set(filteredOrders.map((order) => order.assignment?.managerId?.name).filter(Boolean))];
-              return managers.length > 0 ? managers.join(", ") : "N/A";
-            })()} |
-            Cashier: {(() => {
-              const cashiers = [...new Set(filteredOrders.map((order) => order.assignment?.cashierId?.name).filter(Boolean))];
-              return cashiers.length > 0 ? cashiers.join(", ") : "N/A";
-            })()}
-          </Text>
-        </Space>
-        <div style={{ marginBottom: 16 }}>
-          <Text>
-            Order IDs:{" "}
-            {getDateRangeAndOrderIds().orderIds.split(", ").map((id, index) => {
-              const match = id.match(/^([A-Z]{3})(\d{2})(\d{2})(\d{4})$/);
-              if (match) {
-                const [_, prefix, date, month, year] = match;
-                return (
-                  <span key={index}>
-                    {prefix}<span style={{ fontWeight: 600 }}>{date}</span>{month}{year}
-                    {index < getDateRangeAndOrderIds().orderIds.split(", ").length - 1 ? ", " : ""}
-                  </span>
-                );
-              }
-              return <span key={index}>{id}{index < getDateRangeAndOrderIds().orderIds.split(", ").length - 1 ? ", " : ""}</span>;
-            })}
-          </Text>
-        </div>
-        {kotData && (
-          <div>
-            {kotData.type === "Branch" ? (
-              kotData.categories.map((cat) => (
-                <div key={cat.name} style={{ marginBottom: 20 }}>
-                  <Text strong style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
-                    {cat.name}
-                  </Text>
-                  {kotData.isAllBranches ? (
-                    Object.entries(cat.branches)
-                      .sort(([_, brA], [__, brB]) => brA.name.localeCompare(brB.name))
-                      .map(([bPrefix, br]) => (
-                        <div key={bPrefix} style={{ marginBottom: 12 }}>
+          {kotData && (
+            <div>
+              {kotData.type === "Branch" ? (
+                kotData.categories.map((cat) => (
+                  <div key={cat.name} style={{ marginBottom: 20 }}>
+                    <Text strong style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+                      {cat.name}
+                    </Text>
+                    {kotData.isAllBranches ? (
+                      Object.entries(cat.branches)
+                        .sort(([_, brA], [__, brB]) => brA.name.localeCompare(brB.name))
+                        .map(([bPrefix, br]) => (
+                          <div key={bPrefix} style={{ marginBottom: 12 }}>
+                            <Text strong style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
+                              {br.name}
+                            </Text>
+                            <Table
+                              columns={kotProductColumns}
+                              dataSource={Object.entries(br.products)
+                                .sort(([a], [b]) => a.localeCompare(b))
+                                .map(([name, p]) => ({ ...p, name }))}
+                              pagination={false}
+                              size="small"
+                              bordered
+                              summary={() => {
+                                const totalQty = Object.values(br.products).reduce((s, p) => s + p.qty, 0);
+                                const totalPrice = Object.values(br.products).reduce((s, p) => s + p.totalPrice, 0);
+                                return (
+                                  <Table.Summary>
+                                    <Table.Summary.Row>
+                                      <Table.Summary.Cell>Branch Total</Table.Summary.Cell>
+                                      <Table.Summary.Cell>{totalQty}</Table.Summary.Cell>
+                                      <Table.Summary.Cell></Table.Summary.Cell>
+                                      <Table.Summary.Cell>₹{totalPrice.toFixed(2)}</Table.Summary.Cell>
+                                    </Table.Summary.Row>
+                                  </Table.Summary>
+                                );
+                              }}
+                            />
+                          </div>
+                        ))
+                    ) : (
+                      <Table
+                        columns={kotProductColumns}
+                        dataSource={Object.entries(cat.products)
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([name, p]) => ({ ...p, name }))}
+                        pagination={false}
+                        size="small"
+                        bordered
+                        summary={() => {
+                          const totalQty = Object.values(cat.products).reduce((s, p) => s + p.qty, 0);
+                          const totalPrice = Object.values(cat.products).reduce((s, p) => s + p.totalPrice, 0);
+                          return (
+                            <Table.Summary>
+                              <Table.Summary.Row>
+                                <Table.Summary.Cell>Category Total</Table.Summary.Cell>
+                                <Table.Summary.Cell>{totalQty}</Table.Summary.Cell>
+                                <Table.Summary.Cell></Table.Summary.Cell>
+                                <Table.Summary.Cell>₹{totalPrice.toFixed(2)}</Table.Summary.Cell>
+                              </Table.Summary.Row>
+                            </Table.Summary>
+                          );
+                        }}
+                      />
+                    )}
+                    {kotData.isAllBranches && (
+                      <Text strong style={{ fontSize: 12, display: "block", marginTop: 4 }}>
+                        Category Total (All Branches): Qty: {Object.values(cat.branches).reduce((sumBr, br) => sumBr + Object.values(br.products).reduce((sumP, p) => sumP + p.qty, 0), 0)}, Total: ₹{Object.values(cat.branches)
+                          .reduce((sumBr, br) => sumBr + Object.values(br.products).reduce((sumP, p) => sumP + p.totalPrice, 0), 0)
+                          .toFixed(2)}
+                      </Text>
+                    )}
+                  </div>
+                ))
+              ) : (
+                kotData.departments.map((dept) => (
+                  <div key={dept.name} style={{ marginBottom: 20 }}>
+                    <Text strong style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
+                      {dept.name}
+                    </Text>
+                    {Object.entries(dept.categories)
+                      .sort(([_, catA], [__, catB]) => catA.name.localeCompare(catB.name))
+                      .map(([catId, cat]) => (
+                        <div key={catId} style={{ marginBottom: 12, marginLeft: 20 }}>
                           <Text strong style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
-                            {br.name}
+                            {cat.name}
                           </Text>
                           <Table
                             columns={kotProductColumns}
-                            dataSource={Object.entries(br.products)
+                            dataSource={Object.entries(cat.products)
                               .sort(([a], [b]) => a.localeCompare(b))
                               .map(([name, p]) => ({ ...p, name }))}
                             pagination={false}
                             size="small"
                             bordered
                             summary={() => {
-                              const totalQty = Object.values(br.products).reduce((s, p) => s + p.qty, 0);
-                              const totalPrice = Object.values(br.products).reduce((s, p) => s + p.totalPrice, 0);
+                              const totalQty = Object.values(cat.products).reduce((s, p) => s + p.qty, 0);
+                              const totalPrice = Object.values(cat.products).reduce((s, p) => s + p.totalPrice, 0);
                               return (
                                 <Table.Summary>
                                   <Table.Summary.Row>
-                                    <Table.Summary.Cell>Branch Total</Table.Summary.Cell>
+                                    <Table.Summary.Cell>Category Total</Table.Summary.Cell>
                                     <Table.Summary.Cell>{totalQty}</Table.Summary.Cell>
                                     <Table.Summary.Cell></Table.Summary.Cell>
                                     <Table.Summary.Cell>₹{totalPrice.toFixed(2)}</Table.Summary.Cell>
@@ -1874,100 +2064,32 @@ const OrderListPage = ({ branchId }) => {
                             }}
                           />
                         </div>
-                      ))
-                  ) : (
-                    <Table
-                      columns={kotProductColumns}
-                      dataSource={Object.entries(cat.products)
-                        .sort(([a], [b]) => a.localeCompare(b))
-                        .map(([name, p]) => ({ ...p, name }))}
-                      pagination={false}
-                      size="small"
-                      bordered
-                      summary={() => {
-                        const totalQty = Object.values(cat.products).reduce((s, p) => s + p.qty, 0);
-                        const totalPrice = Object.values(cat.products).reduce((s, p) => s + p.totalPrice, 0);
-                        return (
-                          <Table.Summary>
-                            <Table.Summary.Row>
-                              <Table.Summary.Cell>Category Total</Table.Summary.Cell>
-                              <Table.Summary.Cell>{totalQty}</Table.Summary.Cell>
-                              <Table.Summary.Cell></Table.Summary.Cell>
-                              <Table.Summary.Cell>₹{totalPrice.toFixed(2)}</Table.Summary.Cell>
-                            </Table.Summary.Row>
-                          </Table.Summary>
-                        );
-                      }}
-                    />
-                  )}
-                  {kotData.isAllBranches && (
-                    <Text strong style={{ fontSize: 12, display: "block", marginTop: 4 }}>
-                      Category Total (All Branches): Qty: {Object.values(cat.branches).reduce((sumBr, br) => sumBr + Object.values(br.products).reduce((sumP, p) => sumP + p.qty, 0), 0)}, Total: ₹{Object.values(cat.branches)
-                        .reduce((sumBr, br) => sumBr + Object.values(br.products).reduce((sumP, p) => sumP + p.totalPrice, 0), 0)
+                      ))}
+                    <Text strong style={{ fontSize: 12, display: "block", marginTop: 4, marginLeft: 20 }}>
+                      Department Total: Qty: {Object.values(dept.categories).reduce((sumCat, cat) => sumCat + Object.values(cat.products).reduce((sumP, p) => sumP + p.qty, 0), 0)}, Total: ₹{Object.values(dept.categories)
+                        .reduce((sumCat, cat) => sumCat + Object.values(cat.products).reduce((sumP, p) => sumP + p.totalPrice, 0), 0)
                         .toFixed(2)}
                     </Text>
-                  )}
-                </div>
-              ))
-            ) : (
-              kotData.departments.map((dept) => (
-                <div key={dept.name} style={{ marginBottom: 20 }}>
-                  <Text strong style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
-                    {dept.name}
-                  </Text>
-                  {Object.entries(dept.categories)
-                    .sort(([_, catA], [__, catB]) => catA.name.localeCompare(catB.name))
-                    .map(([catId, cat]) => (
-                      <div key={catId} style={{ marginBottom: 12, marginLeft: 20 }}>
-                        <Text strong style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
-                          {cat.name}
-                        </Text>
-                        <Table
-                          columns={kotProductColumns}
-                          dataSource={Object.entries(cat.products)
-                            .sort(([a], [b]) => a.localeCompare(b))
-                            .map(([name, p]) => ({ ...p, name }))}
-                          pagination={false}
-                          size="small"
-                          bordered
-                          summary={() => {
-                            const totalQty = Object.values(cat.products).reduce((s, p) => s + p.qty, 0);
-                            const totalPrice = Object.values(cat.products).reduce((s, p) => s + p.totalPrice, 0);
-                            return (
-                              <Table.Summary>
-                                <Table.Summary.Row>
-                                  <Table.Summary.Cell>Category Total</Table.Summary.Cell>
-                                  <Table.Summary.Cell>{totalQty}</Table.Summary.Cell>
-                                  <Table.Summary.Cell></Table.Summary.Cell>
-                                  <Table.Summary.Cell>₹{totalPrice.toFixed(2)}</Table.Summary.Cell>
-                                </Table.Summary.Row>
-                              </Table.Summary>
-                            );
-                          }}
-                        />
-                      </div>
-                    ))}
-                  <Text strong style={{ fontSize: 12, display: "block", marginTop: 4, marginLeft: 20 }}>
-                    Department Total: Qty: {Object.values(dept.categories).reduce((sumCat, cat) => sumCat + Object.values(cat.products).reduce((sumP, p) => sumP + p.qty, 0), 0)}, Total: ₹{Object.values(dept.categories)
-                      .reduce((sumCat, cat) => sumCat + Object.values(cat.products).reduce((sumP, p) => sumP + p.totalPrice, 0), 0)
-                      .toFixed(2)}
-                  </Text>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </Modal>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </Modal>
+      </Space>
     </div>
   );
 };
+
 export async function getServerSideProps(context) {
   const { query } = context;
   const { branchId } = query;
+
   return {
     props: {
       branchId: branchId || null,
     },
   };
 }
+
 export default OrderListPage;
